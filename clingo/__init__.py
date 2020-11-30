@@ -65,8 +65,12 @@ The second example shows how to use Python code from clingo.
     q(@seq(1,2)).
 '''
 
-from typing import AbstractSet, Any, Callable, ContextManager, Hashable, Iterable, Iterator, List, Mapping, MutableSequence, Optional, Sequence, Set, Tuple, Union, ValuesView
+from typing import (
+        AbstractSet, Any, Callable, ContextManager, Hashable, Iterable, Iterator, List, Mapping, MutableSequence,
+        Optional, Sequence, Set, Tuple, Union, ValuesView)
 from abc import ABCMeta, abstractmethod
+from enum import Enum
+from functools import total_ordering
 
 from .types import Comparable, Lookup
 from . import ast
@@ -96,7 +100,7 @@ def _cb_error_handler(param: str):
     return handler
 
 
-class MessageCode(Hashable, Comparable, metaclass=ABCMeta):
+class MessageCode(Enum):
     '''
     Enumeration of the different types of messages.
 
@@ -126,15 +130,15 @@ class MessageCode(Hashable, Comparable, metaclass=ABCMeta):
     Other : MessageCode
         Reports other kinds of messages.
     '''
-    # AtomUndefined: MessageCode
-    # FileIncluded: MessageCode
-    # GlobalVariable: MessageCode
-    # OperationUndefined: MessageCode
-    # Other: MessageCode
-    # RuntimeError: MessageCode
-    # VariableUnbounded: MessageCode
+    AtomUndefined = _lib.clingo_warning_atom_undefined
+    FileIncluded = _lib.clingo_warning_file_included
+    GlobalVariable = _lib.clingo_warning_global_variable
+    OperationUndefined = _lib.clingo_warning_operation_undefined
+    Other = _lib.clingo_warning_atom_undefined
+    RuntimeError = _lib.clingo_warning_runtime_error
+    VariableUnbounded = _lib.clingo_warning_variable_unbounded
 
-class TruthValue(Hashable, Comparable, metaclass=ABCMeta):
+class TruthValue(Enum):
     '''
     Enumeration of the different truth values.
 
@@ -157,13 +161,12 @@ class TruthValue(Hashable, Comparable, metaclass=ABCMeta):
     Release : TruthValue
         Indicates that an atom is to be released.
     '''
-    # False_: TruthValue
-    False_ = False
-    # Free: TruthValue
-    # Release: TruthValue
-    # True_: TruthValue
+    False_ = _lib.clingo_truth_value_false
+    Free = _lib.clingo_truth_value_free
+    True_ = _lib.clingo_truth_value_true
+    Release = 3
 
-class SymbolType(Hashable, Comparable, metaclass=ABCMeta):
+class SymbolType(Enum):
     '''
     Enumeration of the different types of symbols.
 
@@ -188,14 +191,13 @@ class SymbolType(Hashable, Comparable, metaclass=ABCMeta):
     Supremum : SymbolType
         The `#sup` symbol
     '''
-    # Function: SymbolType
-    # Infimum: SymbolType
-    # Number: SymbolType
-    # String: SymbolType
-    # Supremum: SymbolType
+    Function = _lib.clingo_symbol_type_function
+    Infimum  = _lib.clingo_symbol_type_infimum
+    Number  = _lib.clingo_symbol_type_number
+    String  = _lib.clingo_symbol_type_string
+    Supremum  = _lib.clingo_symbol_type_supremum
 
-
-#class Symbol(Hashable, Comparable, metaclass=ABCMeta):
+@total_ordering
 class Symbol:
     '''
     Represents a gringo symbol.
@@ -225,10 +227,21 @@ class Symbol:
         _lib.clingo_symbol_to_string(self._rep, p_str, p_size[0])
         return _ffi.string(p_str).decode()
 
+    def __hash__(self) -> int:
+        return _lib.clingo_symbol_hash(self._rep)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Symbol):
+            return NotImplemented
+        return _lib.clingo_symbol_is_equal_to(self._rep, other._rep)
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, Symbol):
+            return NotImplemented
+        return _lib.clingo_symbol_is_less_than(self._rep, other._rep)
+
     def match(self, name: str, arity: int) -> bool:
         '''
-        match(self, name: str, arity: int) -> bool
-
         Check if this is a function symbol with the given signature.
 
         Parameters
@@ -244,55 +257,75 @@ class Symbol:
         bool
             Whether the function matches.
         '''
+        return self.type == SymbolType.Function and self.positive and self.name == name and len(self.arguments) == arity
 
-    arguments: List['Symbol']
-    '''
-    arguments: List[Symbol]
+    @property
+    def arguments(self) -> List['Symbol']:
+        '''
+        The arguments of a function.
+        '''
+        p_args = _ffi.new('clingo_symbol_t**')
+        p_size = _ffi.new('size_t*')
+        _handle_error(_lib.clingo_symbol_arguments(self._rep, p_args, p_size))
+        ret = []
+        for i in range(p_size[0]):
+            ret.append(Symbol(p_args[0][i]))
+        return ret
 
-    The arguments of a function.
-    '''
-    name: str
-    '''
-    name: str
+    @property
+    def name(self) -> str:
+        '''
+        The name of a function.
+        '''
+        p_name = _ffi.new('char**')
+        _handle_error(_lib.clingo_symbol_name(self._rep, p_name))
+        return _ffi.string(p_name[0]).decode()
 
-    The name of a function.
+    @property
+    def negative(self) -> bool:
+        '''
+        The inverted sign of a function.
+        '''
+        p_negative = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbol_is_negative(self._rep, p_negative))
+        return p_negative[0]
 
-    '''
-    negative: bool
-    '''
-    negative: bool
+    @property
+    def number(self) -> int:
+        '''
+        The value of a number.
+        '''
+        p_num = _ffi.new('int*')
+        _handle_error(_lib.clingo_symbol_number(self._rep, p_num))
+        return p_num[0]
 
-    The inverted sign of a function.
-    '''
-    number: int
-    '''
-    number: int
+    @property
+    def positive(self) -> bool:
+        '''
+        The sign of a function.
+        '''
+        p_positive = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbol_is_positive(self._rep, p_positive))
+        return p_positive[0]
 
-    The value of a number.
-    '''
-    positive: bool
-    '''
-    positive: bool
+    @property
+    def string(self) -> str:
+        '''
+        The value of a string.
+        '''
+        p_str = _ffi.new('char**')
+        _handle_error(_lib.clingo_symbol_string(self._rep, p_str))
+        return _ffi.string(p_str[0]).decode()
 
-    The sign of a function.
-    '''
-    string: str
-    '''
-    string: str
+    @property
+    def type(self) -> SymbolType:
+        '''
+        The type of the symbol.
+        '''
+        return SymbolType(_lib.clingo_symbol_type(self._rep))
 
-    The value of a string.
+def Function(name: str, arguments: Sequence[Symbol]=[], positive: bool=True) -> Symbol:
     '''
-    type: SymbolType
-    '''
-    type: SymbolType
-
-    The type of the symbol.
-    '''
-
-def Function(name: str, arguments: Iterable[Symbol]=[], positive: bool=True) -> Symbol:
-    '''
-    Function(name: str, arguments: Iterable[Symbol]=[], positive: bool=True) -> Symbol
-
     Construct a function symbol.
 
     This includes constants and tuples. Constants have an empty argument list and
@@ -312,11 +345,16 @@ def Function(name: str, arguments: Iterable[Symbol]=[], positive: bool=True) -> 
     -------
     Symbol
     '''
+    # pylint: disable=protected-access,invalid-name,dangerous-default-value
+    p_sym = _ffi.new('clingo_symbol_t*')
+    c_args = _ffi.new('clingo_symbol_t[]', len(arguments))
+    for i, arg in enumerate(arguments):
+        c_args[i] = arg._rep
+    _handle_error(_lib.clingo_symbol_create_function(name.encode(), c_args, len(arguments), positive, p_sym))
+    return Symbol(p_sym[0])
 
 def Number(number: int) -> Symbol:
     '''
-    Number(number: int) -> Symbol
-
     Construct a numeric symbol given a number.
 
     Parameters
@@ -328,6 +366,7 @@ def Number(number: int) -> Symbol:
     -------
     Symbol
     '''
+    # pylint: disable=invalid-name
     p_rep = _ffi.new('clingo_symbol_t*')
     _lib.clingo_symbol_create_number(number, p_rep)
     return Symbol(p_rep[0])
@@ -347,8 +386,12 @@ def String(string: str) -> Symbol:
     -------
     Symbol
     '''
+    # pylint: disable=invalid-name
+    p_rep = _ffi.new('clingo_symbol_t*')
+    _handle_error(_lib.clingo_symbol_create_string(string.encode(), p_rep))
+    return Symbol(p_rep[0])
 
-def Tuple_(arguments: Iterable[Symbol]) -> Symbol:
+def Tuple_(arguments: Sequence[Symbol]) -> Symbol:
     '''
     Tuple_(arguments: Iterable[Symbol]) -> Symbol
 
@@ -367,9 +410,16 @@ def Tuple_(arguments: Iterable[Symbol]) -> Symbol:
     --------
     clingo.Function
     '''
+    # pylint: disable=invalid-name
+    return Function("", arguments)
 
-# Infimum: Symbol = Symbol()
-# Supremum: Symbol = Symbol()
+_p_infimum = _ffi.new('clingo_symbol_t*')
+_p_supremum = _ffi.new('clingo_symbol_t*')
+_lib.clingo_symbol_create_infimum(_p_infimum)
+_lib.clingo_symbol_create_supremum(_p_supremum)
+
+Infimum: Symbol = Symbol(_p_infimum[0])
+Supremum: Symbol = Symbol(_p_supremum[0])
 
 def parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> Symbol:
     '''
@@ -399,7 +449,10 @@ def parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, messa
         >>> clingo.parse_term('p(1+2)')
         p(3)
     '''
-
+    # TODO: logger
+    p_sym = _ffi.new('clingo_symbol_t*')
+    _lib.clingo_parse_term(string.encode(), _ffi.NULL, _ffi.NULL, message_limit, p_sym)
+    return Symbol(p_sym[0])
 
 class SymbolicAtom(metaclass=ABCMeta):
     '''
