@@ -73,10 +73,10 @@ from enum import Enum
 from functools import total_ordering
 
 from .types import Comparable, Lookup
-from . import ast
 
 from _clingo import ffi as _ffi, lib as _lib # type: ignore
 
+# TODO: better use clingo library to infer
 __version__: str = "5.5.0"
 
 def _handle_error(ret, handler=None):
@@ -2535,53 +2535,6 @@ class Configuration(metaclass=ABCMeta):
 
     '''
 
-class ProgramBuilder(ContextManager['ProgramBuilder'], metaclass=ABCMeta):
-    '''
-    Object to build non-ground programs.
-
-    Implements: `ContextManager[ProgramBuilder]`.
-
-    See Also
-    --------
-    Control.builder, parse_program
-
-    Notes
-    -----
-    A `ProgramBuilder` is a context manager and must be used with Python's `with`
-    statement.
-
-    Examples
-    --------
-    The following example parses a program from a string and passes the resulting
-    `AST` to the builder:
-
-        >>> import clingo
-        >>> ctl = clingo.Control()
-        >>> prg = "a."
-        >>> with ctl.builder() as bld:
-        ...    clingo.parse_program(prg, lambda stm: bld.add(stm))
-        ...
-        >>> ctl.ground([("base", [])])
-        >>> ctl.solve(on_model=lambda m: print("Answer: {}".format(m)))
-        Answer: a
-        SAT
-    '''
-    def add(self, statement: ast.AST) -> None:
-        '''
-        add(self, statement: ast.AST) -> None
-
-        Adds a statement in form of an `ast.AST` node to the program.
-
-        Parameters
-        ----------
-        statement : ast.AST
-            The statement to add.
-
-        Returns
-        -------
-        None
-        '''
-
 class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',float]], metaclass=ABCMeta):
     '''
     Object to modify statistics stored in an array.
@@ -2728,99 +2681,6 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
             The values of the map.
         '''
 
-class Flag:
-    '''
-    Flag(value: bool=False) -> Flag
-
-    Helper object to parse command-line flags.
-
-    Parameters
-    ----------
-    value : bool=False
-        The initial value of the flag.
-    '''
-    def __init__(self, value: bool=False):
-        pass
-    flag: bool
-    '''
-    flag: bool
-
-    The value of the flag.
-
-    '''
-
-class ApplicationOptions(metaclass=ABCMeta):
-    '''
-    Object to add custom options to a clingo based application.
-    '''
-    def add(self, group: str, option: str, description: str, parser: Callable[[str], bool], multi: bool=False, argument: str=None) -> None:
-        '''
-        add(self, group: str, option: str, description: str, parser: Callable[[str], bool], multi: bool=False, argument: str=None) -> None
-
-        Add an option that is processed with a custom parser.
-
-        Parameters
-        ----------
-        group : str
-            Options are grouped into sections as given by this string.
-        option : str
-            Parameter option specifies the name(s) of the option. For example,
-            `"ping,p"` adds the short option `-p` and its long form `--ping`. It is
-            also possible to associate an option with a help level by adding `",@l"` to
-            the option specification. Options with a level greater than zero are only
-            shown if the argument to help is greater or equal to `l`.
-        description : str
-            The description of the option shown in the help output.
-        parser : Callable[[str],bool]
-            An option parser is a function that takes a string as input and returns
-            true or false depending on whether the option was parsed successively.
-        multi : bool=False
-            Whether the option can appear multiple times on the command-line.
-        argument : str=None
-            Optional string to change the value name in the generated help.
-
-        Returns
-        -------
-        None
-
-        Raises
-        ------
-        RuntimeError
-            An error is raised if an option with the same name already exists.
-
-        Notes
-        -----
-        The parser also has to take care of storing the semantic value of the option
-        somewhere.
-        '''
-
-    def add_flag(self, group: str, option: str, description: str, target: Flag) -> None:
-        '''
-        add_flag(self, group: str, option: str, description: str, target: Flag) -> None
-
-        Add an option that is a simple flag.
-
-        This function is similar to `ApplicationOptions.add` but simpler because
-        it only supports flags, which do not have values. Note that the target
-        parameter must be of type Flag, which is set to true if the flag is passed on
-        the command line.
-
-        Parameters
-        ----------
-        group : str
-            Options are grouped into sections as given by this string.
-        option : str
-            Same as for `ApplicationOptions.add`.
-        description : str
-            The description of the option shown in the help output.
-        target : Flag
-            The object that receives the value.
-
-        Returns
-        -------
-        None
-        '''
-
 class _SolveEventHandler:
     def __init__(self, on_model):
         self.error = None
@@ -2951,21 +2811,6 @@ class Control:
         Returns
         -------
         Backend
-        '''
-
-    def builder(self) -> ProgramBuilder:
-        '''
-        builder(self) -> ProgramBuilder
-
-        Return a builder to construct a non-ground logic programs.
-
-        Returns
-        -------
-        ProgramBuilder
-
-        See Also
-        --------
-        ProgramBuilder
         '''
 
     def cleanup(self) -> None:
@@ -3409,6 +3254,99 @@ class Control:
     A `TheoryAtomIter` object, which can be used to iterate over the theory atoms.
     '''
 
+class Flag:
+    '''
+    Flag(value: bool=False) -> Flag
+
+    Helper object to parse command-line flags.
+
+    Parameters
+    ----------
+    value : bool=False
+        The initial value of the flag.
+    '''
+    def __init__(self, value: bool=False):
+        pass
+    flag: bool
+    '''
+    flag: bool
+
+    The value of the flag.
+
+    '''
+
+class ApplicationOptions(metaclass=ABCMeta):
+    '''
+    Object to add custom options to a clingo based application.
+    '''
+    def add(self, group: str, option: str, description: str, parser: Callable[[str], bool], multi: bool=False, argument: str=None) -> None:
+        '''
+        add(self, group: str, option: str, description: str, parser: Callable[[str], bool], multi: bool=False, argument: str=None) -> None
+
+        Add an option that is processed with a custom parser.
+
+        Parameters
+        ----------
+        group : str
+            Options are grouped into sections as given by this string.
+        option : str
+            Parameter option specifies the name(s) of the option. For example,
+            `"ping,p"` adds the short option `-p` and its long form `--ping`. It is
+            also possible to associate an option with a help level by adding `",@l"` to
+            the option specification. Options with a level greater than zero are only
+            shown if the argument to help is greater or equal to `l`.
+        description : str
+            The description of the option shown in the help output.
+        parser : Callable[[str],bool]
+            An option parser is a function that takes a string as input and returns
+            true or false depending on whether the option was parsed successively.
+        multi : bool=False
+            Whether the option can appear multiple times on the command-line.
+        argument : str=None
+            Optional string to change the value name in the generated help.
+
+        Returns
+        -------
+        None
+
+        Raises
+        ------
+        RuntimeError
+            An error is raised if an option with the same name already exists.
+
+        Notes
+        -----
+        The parser also has to take care of storing the semantic value of the option
+        somewhere.
+        '''
+
+    def add_flag(self, group: str, option: str, description: str, target: Flag) -> None:
+        '''
+        add_flag(self, group: str, option: str, description: str, target: Flag) -> None
+
+        Add an option that is a simple flag.
+
+        This function is similar to `ApplicationOptions.add` but simpler because
+        it only supports flags, which do not have values. Note that the target
+        parameter must be of type Flag, which is set to true if the flag is passed on
+        the command line.
+
+        Parameters
+        ----------
+        group : str
+            Options are grouped into sections as given by this string.
+        option : str
+            Same as for `ApplicationOptions.add`.
+        description : str
+            The description of the option shown in the help output.
+        target : Flag
+            The object that receives the value.
+
+        Returns
+        -------
+        None
+        '''
+
 class Application(metaclass=ABCMeta):
     """
     Interface that has to be implemented to customize clingo.
@@ -3551,62 +3489,3 @@ def clingo_main(application: Application, files: Iterable[str]=[]) -> int:
 
         clingo.clingo_main(Application(sys.argv[0]), sys.argv[1:])
     '''
-
-def parse_files(files: Iterable[str], callback: Callable[[ast.AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
-    '''
-    parse_files(files: Iterable[str], callback: Callable[[ast.AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None
-
-    Parse the programs in the given files and return an abstract syntax tree for
-    each statement via a callback.
-
-    The function follows clingo's handling of files on the command line. Filename
-    "-" is treated as stdin and if an empty list is given, then the parser will
-    read from stdin.
-
-    Parameters
-    ----------
-    files : Iterable[str]
-        List of file names.
-    callback : Callable[[ast.AST],None]
-        Callable taking an ast as argument.
-    logger : Callable[[MessageCode,str],None]=None
-        Function to intercept messages normally printed to standard error.
-    message_limit : int=20
-        The maximum number of messages passed to the logger.
-
-    Returns
-    -------
-    None
-
-    See Also
-    --------
-    ProgramBuilder
-    '''
-
-def parse_program(program: str, callback: Callable[[ast.AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
-    '''
-    parse_program(program: str, callback: Callable[[ast.AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None
-
-    Parse the given program and return an abstract syntax tree for each statement
-    via a callback.
-
-    Parameters
-    ----------
-    program : str
-        String representation of the program.
-    callback : Callable[[ast.AST],None]
-        Callable taking an ast as argument.
-    logger : Callable[[MessageCode,str],None]=None
-        Function to intercept messages normally printed to standard error.
-    message_limit : int=20
-        The maximum number of messages passed to the logger.
-
-    Returns
-    -------
-    None
-
-    See Also
-    --------
-    ProgramBuilder
-    '''
-

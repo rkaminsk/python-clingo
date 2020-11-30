@@ -302,14 +302,11 @@ statement = Rule
 ```
 '''
 
-from typing import Any, Hashable, List, Mapping, Set, Tuple
+from typing import Any, Callable, Hashable, Iterable, List, Mapping, Set, Tuple
 from abc import ABCMeta
 
 from .types import Comparable, Lookup
-from . import ast
-
-
-
+from . import Control, MessageCode
 
 def Aggregate(*args: Any, **kwargs: Any) -> Any:
     pass
@@ -866,3 +863,108 @@ class UnaryOperator(metaclass=ABCMeta):
 
     Right-hand side representation of the operator.
     '''
+
+def parse_files(files: Iterable[str], callback: Callable[[AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
+    '''
+    Parse the programs in the given files and return an abstract syntax tree for
+    each statement via a callback.
+
+    The function follows clingo's handling of files on the command line. Filename
+    "-" is treated as stdin and if an empty list is given, then the parser will
+    read from stdin.
+
+    Parameters
+    ----------
+    files : Iterable[str]
+        List of file names.
+    callback : Callable[[AST],None]
+        Callable taking an ast as argument.
+    logger : Callable[[MessageCode,str],None]=None
+        Function to intercept messages normally printed to standard error.
+    message_limit : int=20
+        The maximum number of messages passed to the logger.
+
+    Returns
+    -------
+    None
+
+    See Also
+    --------
+    ProgramBuilder
+    '''
+
+def parse_program(program: str, callback: Callable[[AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
+    '''
+    Parse the given program and return an abstract syntax tree for each statement
+    via a callback.
+
+    Parameters
+    ----------
+    program : str
+        String representation of the program.
+    callback : Callable[[AST],None]
+        Callable taking an ast as argument.
+    logger : Callable[[MessageCode,str],None]=None
+        Function to intercept messages normally printed to standard error.
+    message_limit : int=20
+        The maximum number of messages passed to the logger.
+
+    Returns
+    -------
+    None
+
+    See Also
+    --------
+    ProgramBuilder
+    '''
+
+class ProgramBuilder(ContextManager['ProgramBuilder'], metaclass=ABCMeta):
+    '''
+    Object to build non-ground programs.
+
+    Implements: `ContextManager[ProgramBuilder]`.
+
+    See Also
+    --------
+    Control.builder, parse_program
+
+    Notes
+    -----
+    A `ProgramBuilder` is a context manager and must be used with Python's `with`
+    statement.
+
+    Examples
+    --------
+    The following example parses a program from a string and passes the resulting
+    `AST` to the builder:
+
+        >>> import clingo
+        >>> ctl = clingo.Control()
+        >>> prg = "a."
+        >>> with ctl.builder() as bld:
+        ...    clingo.parse_program(prg, lambda stm: bld.add(stm))
+        ...
+        >>> ctl.ground([("base", [])])
+        >>> ctl.solve(on_model=lambda m: print("Answer: {}".format(m)))
+        Answer: a
+        SAT
+    '''
+    def __init__(self, control: Control):
+        pass
+
+    def add(self, statement: AST) -> None:
+        '''
+        add(self, statement: ast.AST) -> None
+
+        Adds a statement in form of an `ast.AST` node to the program.
+
+        Parameters
+        ----------
+        statement : ast.AST
+            The statement to add.
+
+        Returns
+        -------
+        None
+        '''
+
