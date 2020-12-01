@@ -66,8 +66,8 @@ The second example shows how to use Python code from clingo.
 '''
 
 from typing import (
-        AbstractSet, Any, Callable, ContextManager, Hashable, Iterable, Iterator, List, Mapping, MutableSequence,
-        Optional, Sequence, Set, Tuple, Union, ValuesView)
+    AbstractSet, Any, Callable, ContextManager, Hashable, Iterable, Iterator, List, Mapping, MutableSequence,
+    Optional, Sequence, Set, Tuple, Union, ValuesView)
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 from functools import total_ordering
@@ -87,11 +87,11 @@ def _clingo_version():
     _lib.clingo_version(p_major, p_minor, p_revision)
     return f"{p_major[0]}.{p_minor[0]}.{p_revision[0]}"
 
-def _handle_error(ret, handler=None):
+def _handle_error(ret: bool, error=None):
     if not ret:
         code = _lib.clingo_error_code()
-        if code == _lib.clingo_error_unknown and handler is not None and handler.error is not None:
-            raise handler.error[0](handler.error[1]).with_traceback(handler.error[2])
+        if code == _lib.clingo_error_unknown and error is not None:
+            raise error[0](error[1]).with_traceback(error[2])
         msg = _ffi.string(_lib.clingo_error_message()).decode()
         if code == _lib.clingo_error_bad_alloc:
             raise MemoryError(msg)
@@ -566,10 +566,10 @@ class SymbolicAtoms:
     def __init__(self, rep):
         self._rep = rep
 
-    def _iter(self, c_sig) -> Iterator[SymbolicAtom]:
+    def _iter(self, p_sig) -> Iterator[SymbolicAtom]:
         p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
         p_valid = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbolic_atoms_begin(self._rep, c_sig, p_it))
+        _handle_error(_lib.clingo_symbolic_atoms_begin(self._rep, p_sig, p_it))
         while True:
             _handle_error(_lib.clingo_symbolic_atoms_is_valid(self._rep, p_it[0], p_valid))
             if not p_valid[0]:
@@ -623,7 +623,7 @@ class SymbolicAtoms:
         '''
         p_sig = _ffi.new('clingo_signature_t*')
         _handle_error(_lib.clingo_signature_create(name.encode(), arity, positive, p_sig))
-        yield from self._iter(p_sig[0])
+        yield from self._iter(p_sig)
 
     @property
     def signatures(self) -> List[Tuple[str,int,bool]]:
@@ -897,7 +897,7 @@ class SolveControl:
         '''
         `SymbolicAtoms` object to inspect the symbolic atoms.
         '''
-        p_atoms = _ffi.new('clingo_symbolic_atoms_t const **')
+        p_atoms = _ffi.new('clingo_symbolic_atoms_t**')
         _handle_error(_lib.clingo_solve_control_symbolic_atoms(self._rep, p_atoms))
 
         return SymbolicAtoms(p_atoms[0])
@@ -916,8 +916,8 @@ class ModelType(Enum):
         The model stores the set of cautious consequences.
     '''
     BraveConsequences = _lib.clingo_model_type_brave_consequences
-    CautiousConsequences: _lib.clingo_model_type_cautious_consequences
-    StableModel: _lib.clingo_model_type_stable_model
+    CautiousConsequences = _lib.clingo_model_type_cautious_consequences
+    StableModel = _lib.clingo_model_type_stable_model
 
 class Model:
     '''
@@ -1141,7 +1141,7 @@ class Model:
         '''
         The type of the model.
         '''
-        p_type = _ffi.new('clingo_id_t*')
+        p_type = _ffi.new('clingo_model_type_t*')
         _handle_error(_lib.clingo_model_type(self._rep, p_type))
 
         return ModelType(p_type[0])
@@ -1213,7 +1213,7 @@ class SolveHandle:
         p_size = _ffi.new('size_t*')
         _handle_error(_lib.clingo_solve_handle_core(self._rep, p_core, p_size), self._handler.error)
 
-        return [p_core[i] for i in range(p_size[0])]
+        return [p_core[0][i] for i in range(p_size[0])]
 
     def get(self) -> SolveResult:
         '''
@@ -2833,23 +2833,43 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
 # {{{1 control [1%]
 
 class _SolveEventHandler:
-    def __init__(self, on_model):
+    # pylint: disable=missing-function-docstring
+    def __init__(self, on_model, on_statistics, on_finish):
         self.error = None
         self._on_model = on_model
+        self._on_statistics = on_statistics
+        self._on_finish = on_finish
 
     def on_model(self, m):
-        ret = self._on_model(Model(m))
+        ret = None
+        if self._on_model:
+            ret = self._on_model(Model(m))
         return bool(ret or ret is None)
+
+    def on_finish(self, res):
+        if self._on_finish:
+            self._on_finish(SolveResult(res))
+
+    def on_statistics(self, step, accu):
+        if self._on_statistics:
+            raise RuntimeError('implement me!!!')
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_solve_event_callback(type_, event, data, goon):
     '''
     Low-level solve event handler.
     '''
+    handler = _ffi.from_handle(data)
+    if type_ == _lib.clingo_solve_event_type_finish:
+        handler.on_finish(_ffi.cast('clingo_solve_result_bitset_t*', event)[0])
+
     if type_ == _lib.clingo_solve_event_type_model:
-        handler = _ffi.from_handle(data)
-        if handler.on_model is not None:
-            goon[0] = handler.on_model(_ffi.cast('clingo_model_t*', event))
+        goon[0] = handler.on_model(_ffi.cast('clingo_model_t*', event))
+
+    if type_ == _lib.clingo_solve_event_type_statistics:
+        p_stats = _ffi.cast('clingo_statistics_t**', event)
+        handler.on_statistics(p_stats[0], p_stats[1])
+
     return True
 
 class Control:
@@ -2882,11 +2902,11 @@ class Control:
             c_args[i] = c_mem[-1]
         p_ctl = _ffi.new('clingo_control_t **')
         _handle_error(_lib.clingo_control_new(c_args, len(arguments), _ffi.NULL, _ffi.NULL, message_limit, p_ctl))
-        self._ctl = p_ctl[0]
+        self._rep = p_ctl[0]
         self._handler = None
 
     def __del__(self):
-        _lib.clingo_control_free(self._ctl)
+        _lib.clingo_control_free(self._rep)
 
     def add(self, name: str, parameters: Sequence[str], program: str) -> None:
         '''
@@ -2916,7 +2936,7 @@ class Control:
         for i, param in enumerate(parameters):
             c_mem.append(_ffi.new("char[]", param.encode()))
             c_params[i] = c_mem[-1]
-        _handle_error(_lib.clingo_control_add(self._ctl, name.encode(), c_params, len(parameters), program.encode()))
+        _handle_error(_lib.clingo_control_add(self._rep, name.encode(), c_params, len(parameters), program.encode()))
 
     def assign_external(self, external: Union[Symbol,int], truth: Optional[bool]) -> None:
         '''
@@ -3057,7 +3077,7 @@ class Control:
                 c_part.params[i] = sym._rep
             c_part.size = len(part[1])
 
-        _handle_error(_lib.clingo_control_ground(self._ctl, c_parts, len(parts), _ffi.NULL, _ffi.NULL))
+        _handle_error(_lib.clingo_control_ground(self._rep, c_parts, len(parts), _ffi.NULL, _ffi.NULL))
 
     def interrupt(self) -> None:
         '''
@@ -3076,6 +3096,7 @@ class Control:
         result of the `Control.solve` method can be used to query if the search was
         interrupted.
         '''
+        _lib.clingo_control_interrupt(self._rep);
 
     def load(self, path: str) -> None:
         '''
@@ -3192,7 +3213,7 @@ class Control:
         '''
 
     def solve(self,
-              assumptions: Iterable[Union[Tuple[Symbol,bool],int]]=[],
+              assumptions: Sequence[Union[Tuple[Symbol,bool],int]]=[],
               on_model: Callable[[Model],Optional[bool]]=None,
               on_statistics : Callable[[StatisticsMap,StatisticsMap],None]=None,
               on_finish: Callable[[SolveResult],None]=None,
@@ -3204,7 +3225,7 @@ class Control:
 
         Parameters
         ----------
-        assumptions : Iterable[Union[Tuple[Symbol,bool],int]]=[]
+        assumptions : Sequence[Union[Tuple[Symbol,bool],int]]=[]
             List of (atom, boolean) tuples or program literals that serve
             as assumptions for the solve call, e.g., solving under
             assumptions `[(Function("a"), True)]` only admits answer sets
@@ -3272,7 +3293,7 @@ class Control:
 
         The following example shows how to yield models:
 
-            >>> import clingo
+        ]    >>> import clingo
             >>> ctl = clingo.Control("0")
             >>> ctl.add("p", [], "1 { a; b } 1.")
             >>> ctl.ground([("p", [])])
@@ -3299,8 +3320,22 @@ class Control:
             SAT
         '''
         # pylint: disable=protected-access
-        handler = _SolveEventHandler(on_model)
+        handler = _SolveEventHandler(on_model, on_statistics, on_finish)
         self._handler = _ffi.new_handle(handler)
+
+        p_ass = _ffi.NULL
+        if assumptions:
+            atoms = None
+            p_ass = _ffi.new('clingo_literal_t[]', len(assumptions))
+            for i, lit in enumerate(assumptions):
+                if isinstance(lit, int):
+                    p_ass[i] = lit
+                else:
+                    if atoms is None:
+                        atoms = self.symbolic_atoms
+                    atom = self.symbolic_atoms[lit[0]]
+                    slit = -1 if atom is None else atom.literal
+                    p_ass[i] = slit if lit[1] else -slit
 
         mode = 0
         if yield_:
@@ -3310,15 +3345,18 @@ class Control:
 
         p_handle = _ffi.new('clingo_solve_handle_t**')
         _handle_error(_lib.clingo_control_solve(
-            self._ctl, mode,
-            _ffi.NULL, 0,
+            self._rep, mode,
+            p_ass, len(assumptions),
             _lib._clingo_solve_event_callback, self._handler,
             p_handle), handler)
         handle = SolveHandle(p_handle[0], handler)
 
         if not yield_ and not async_:
             with handle:
-                return handle.get()
+                ret = handle.get()
+                if on_core is not None and ret.unsatisfiable:
+                    on_core(handle.core())
+                return ret
         return handle
 
     configuration: Configuration
@@ -3413,12 +3451,16 @@ class Control:
         }
 
     '''
-    symbolic_atoms: SymbolicAtoms
-    '''
-    symbolic_atoms: SymbolicAtoms
 
-    `SymbolicAtoms` object to inspect the symbolic atoms.
-    '''
+    @property
+    def symbolic_atoms(self) -> SymbolicAtoms:
+        '''
+        `SymbolicAtoms` object to inspect the symbolic atoms.
+        '''
+        p_ret = _ffi.new('clingo_symbolic_atoms_t**')
+        _handle_error(_lib.clingo_control_symbolic_atoms(self._rep, p_ret))
+        return SymbolicAtoms(p_ret[0])
+
     theory_atoms: Iterable[TheoryAtom]
     '''
     A `TheoryAtomIter` object, which can be used to iterate over the theory atoms.
