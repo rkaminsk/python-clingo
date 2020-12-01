@@ -1,5 +1,5 @@
 '''
-The clingo-5.5.0 module.
+The clingo module.
 
 This module provides functions and classes to control the grounding and solving
 process.
@@ -71,13 +71,21 @@ from typing import (
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 from functools import total_ordering
+from os import _exit
+from traceback import print_exception
+from sys import stderr
 
+from _clingo import ffi as _ffi, lib as _lib # type: ignore # pylint: disable=no-name-in-module
 from .types import Comparable, Lookup
 
-from _clingo import ffi as _ffi, lib as _lib # type: ignore
+# {{{1 auxiliary functions
 
-# TODO: better use clingo library to infer
-__version__: str = "5.5.0"
+def _clingo_version():
+    p_major = _ffi.new('int*')
+    p_minor = _ffi.new('int*')
+    p_revision = _ffi.new('int*')
+    _lib.clingo_version(p_major, p_minor, p_revision)
+    return f"{p_major[0]}.{p_minor[0]}.{p_revision[0]}"
 
 def _handle_error(ret, handler=None):
     if not ret:
@@ -99,18 +107,18 @@ def _cb_error_handler(param: str):
         return False
     return handler
 
+def _cb_error_panic(exception, exc_value, traceback):
+    print_exception(exception, exc_value, traceback)
+    stderr.write('PANIC: exception in nothrow scope')
+    _exit(1)
+
+# {{{1 basics [100%]
+
+__version__: str = _clingo_version()
 
 class MessageCode(Enum):
     '''
     Enumeration of the different types of messages.
-
-    `MessageCode` objects have a readable string representation, implement Python's
-    rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Implements: `Hashable`, `Comparable`.
 
     Attributes
     ----------
@@ -142,14 +150,6 @@ class TruthValue(Enum):
     '''
     Enumeration of the different truth values.
 
-    `TruthValue` objects have a readable string representation, implement Python's
-    rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Implements: `Hashable`, `Comparable`.
-
     Attributes
     ----------
     True_ : TruthValue
@@ -166,17 +166,11 @@ class TruthValue(Enum):
     True_ = _lib.clingo_truth_value_true
     Release = 3
 
+# {{{1 symbols [100%]
+
 class SymbolType(Enum):
     '''
     Enumeration of the different types of symbols.
-
-    `SymbolType` objects have a readable string representation, implement Python's
-    rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed objects are available:
-
-    Implements: `Hashable`, `Comparable`.
 
     Attributes
     ----------
@@ -205,11 +199,9 @@ class Symbol:
     This includes numbers, strings, functions (including constants with
     `len(arguments) == 0` and tuples with `len(name) == 0`), `#inf` and `#sup`.
 
-    Symbol objects implemente Python's rich comparison operators and are ordered
+    Symbol objects implement Python's rich comparison operators and are ordered
     like in gringo. They can also be used as keys in dictionaries. Their string
     representation corresponds to their gringo representation.
-
-    Implements: `Hashable`, `Comparable`.
 
     Notes
     -----
@@ -240,7 +232,7 @@ class Symbol:
             return NotImplemented
         return _lib.clingo_symbol_is_less_than(self._rep, other._rep)
 
-    def match(self, name: str, arity: int) -> bool:
+    def match(self, name: str, arity: int, positive: bool = True) -> bool:
         '''
         Check if this is a function symbol with the given signature.
 
@@ -252,12 +244,18 @@ class Symbol:
         arity : int
             The arity of the function.
 
+        positive : bool
+            Whether to match positive or negative signatures.
+
         Returns
         -------
         bool
             Whether the function matches.
         '''
-        return self.type == SymbolType.Function and self.positive and self.name == name and len(self.arguments) == arity
+        return (self.type == SymbolType.Function and
+                self.positive == positive and
+                self.name == name and
+                len(self.arguments) == arity)
 
     @property
     def arguments(self) -> List['Symbol']:
@@ -336,7 +334,7 @@ def Function(name: str, arguments: Sequence[Symbol]=[], positive: bool=True) -> 
     ----------
     name : str
         The name of the function (empty for tuples).
-    arguments : Iterable[Symbol]=[]
+    arguments : Sequence[Symbol]=[]
         The arguments in form of a list of symbols.
     positive : bool=True
         The sign of the function (tuples must not have signs).
@@ -373,8 +371,6 @@ def Number(number: int) -> Symbol:
 
 def String(string: str) -> Symbol:
     '''
-    String(string: str) -> Symbol
-
     Construct a string symbol given a string.
 
     Parameters
@@ -393,13 +389,11 @@ def String(string: str) -> Symbol:
 
 def Tuple_(arguments: Sequence[Symbol]) -> Symbol:
     '''
-    Tuple_(arguments: Iterable[Symbol]) -> Symbol
-
     A shortcut for `Function("", arguments)`.
 
     Parameters
     ----------
-    arguments : Iterable[Symbol]
+    arguments : Sequence[Symbol]
         The arguments in form of a list of symbols.
 
     Returns
@@ -421,10 +415,16 @@ _lib.clingo_symbol_create_supremum(_p_supremum)
 Infimum: Symbol = Symbol(_p_infimum[0])
 Supremum: Symbol = Symbol(_p_supremum[0])
 
+@_ffi.def_extern(onerror=_cb_error_panic)
+def _clingo_logger_callback(code, message, data):
+    '''
+    Low-level logger callback.
+    '''
+    handler = _ffi.from_handle(data)
+    handler(MessageCode(code), message.encode())
+
 def parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> Symbol:
     '''
-    parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> Symbol
-
     Parse the given string using gringo's term parser for ground terms.
 
     The function also evaluates arithmetic functions.
@@ -444,15 +444,22 @@ def parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, messa
 
     Examples
     --------
-
         >>> import clingo
         >>> clingo.parse_term('p(1+2)')
         p(3)
     '''
-    # TODO: logger
+    if logger is not None:
+        # pylint: disable=protected-access
+        c_handle = _ffi.new_handle(logger)
+        c_cb = _lib._clingo_logger_callback
+    else:
+        c_handle = _ffi.NULL
+        c_cb = _ffi.NULL
     p_sym = _ffi.new('clingo_symbol_t*')
-    _lib.clingo_parse_term(string.encode(), _ffi.NULL, _ffi.NULL, message_limit, p_sym)
+    _handle_error(_lib.clingo_parse_term(string.encode(), c_cb, c_handle, message_limit, p_sym))
     return Symbol(p_sym[0])
+
+# {{{1 symbolic atoms [0%]
 
 class SymbolicAtom(metaclass=ABCMeta):
     '''
@@ -509,15 +516,6 @@ class SymbolicAtom(metaclass=ABCMeta):
 
     The representation of the atom in form of a symbol.
 
-    '''
-
-class SymbolicAtomIter(Iterator[SymbolicAtom], metaclass=ABCMeta):
-    '''
-    Implements: `Iterator[SymbolicAtom]`.
-
-    See Also
-    --------
-    SymbolicAtoms
     '''
 
 class SymbolicAtoms(Lookup[Union[Symbol,int],SymbolicAtom], metaclass=ABCMeta):
@@ -579,6 +577,8 @@ class SymbolicAtoms(Lookup[Union[Symbol,int],SymbolicAtom], metaclass=ABCMeta):
 
     The Boolean indicates the sign of the signature.
     '''
+
+# {{{1 theory atoms [0%]
 
 class TheoryTermType(Hashable, Comparable, metaclass=ABCMeta):
     '''
@@ -718,10 +718,7 @@ class TheoryAtom(metaclass=ABCMeta):
 
     '''
 
-class TheoryAtomIter(Iterator[TheoryAtom], metaclass=ABCMeta):
-    '''
-    Implements: `Iterator[TheoryAtom]`.
-    '''
+# {{{1 solving [1%]
 
 class SolveResult(metaclass=ABCMeta):
     '''
@@ -1143,6 +1140,7 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
             next result is ready.
         '''
 
+# {{{1 propagators [0%]
 
 class Trail(Sequence[int], metaclass=ABCMeta):
     '''
@@ -1851,6 +1849,8 @@ class Propagator(metaclass=ABCMeta):
         used.
         """
 
+# {{{1 ground program inspection/building [0%]
+
 class HeuristicType(Hashable, Comparable, metaclass=ABCMeta):
     '''
     Enumeration of the different heuristic types.
@@ -2463,6 +2463,7 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
         None
         '''
 
+# {{{1 configuration [0%]
 
 class Configuration(metaclass=ABCMeta):
     '''
@@ -2680,6 +2681,8 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
         ValuesView[Union[StatisticsArray,StatisticsMap,float]]
             The values of the map.
         '''
+
+# {{{1 control [1%]
 
 class _SolveEventHandler:
     def __init__(self, on_model):
@@ -3253,6 +3256,8 @@ class Control:
 
     A `TheoryAtomIter` object, which can be used to iterate over the theory atoms.
     '''
+
+# {{{1 application [0%]
 
 class Flag:
     '''

@@ -16,8 +16,11 @@ class TestSymbol(TestCase):
         '''
         Test term parsing.
         '''
-        self.assertEqual(str(parse_term("p(1+2)")), "p(3)")
-        # TODO: test logger
+        self.assertEqual(str(parse_term("p(3)")), "p(3)")
+        log = []
+        self.assertRaises(RuntimeError, parse_term, "p(1/0)", lambda code, message: log.append((code, message)))
+        self.assertEqual(len(log), 0)
+
 
     def test_str(self):
         '''
