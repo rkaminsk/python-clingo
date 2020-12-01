@@ -87,11 +87,11 @@ def _clingo_version():
     _lib.clingo_version(p_major, p_minor, p_revision)
     return f"{p_major[0]}.{p_minor[0]}.{p_revision[0]}"
 
-def _handle_error(ret: bool, error=None):
+def _handle_error(ret: bool, handler=None):
     if not ret:
         code = _lib.clingo_error_code()
-        if code == _lib.clingo_error_unknown and error is not None:
-            raise error[0](error[1]).with_traceback(error[2])
+        if code == _lib.clingo_error_unknown and handler is not None and handler.error is not None:
+            raise handler.error[0](handler.error[1]).with_traceback(handler.error[2])
         msg = _ffi.string(_lib.clingo_error_message()).decode()
         if code == _lib.clingo_error_bad_alloc:
             raise MemoryError(msg)
@@ -998,7 +998,10 @@ class Model:
         This only has an effect if there is an underlying clingo application, which
         will print the added symbols.
         '''
+        # pylint: disable=protected-access
         c_symbols = _ffi.new('clingo_symbol_t[]', len(symbols))
+        for i, sym in enumerate(symbols):
+            c_symbols[i] = sym._rep
         _handle_error(_lib.clingo_model_extend(self._rep, c_symbols, len(symbols)))
 
     def is_true(self, literal: int) -> bool:
@@ -1098,11 +1101,11 @@ class Model:
 
         The return values correspond to clasp's cost output.
         '''
-        p_size = _ffi('size_t*')
+        p_size = _ffi.new('size_t*')
         _handle_error(_lib.clingo_model_cost_size(self._rep, p_size))
 
         p_costs = _ffi.new('int64_t[]', p_size[0])
-        _handle_error(_lib.clingo_model_cost(self._rep, p_costs, p_size))
+        _handle_error(_lib.clingo_model_cost(self._rep, p_costs, p_size[0]))
 
         return list(p_costs)
 
@@ -1132,7 +1135,7 @@ class Model:
         The id of the thread which found the model.
         '''
         p_num = _ffi.new('clingo_id_t*')
-        _handle_error(_lib.clingo_model_number(self._rep, p_num))
+        _handle_error(_lib.clingo_model_thread_id(self._rep, p_num))
 
         return p_num[0]
 
@@ -1184,7 +1187,7 @@ class SolveHandle:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        _handle_error(_lib.clingo_solve_handle_close(self._rep), self._handler.error)
+        _handle_error(_lib.clingo_solve_handle_close(self._rep), self._handler)
 
     def cancel(self) -> None:
         '''
@@ -1198,7 +1201,7 @@ class SolveHandle:
         --------
         Control.interrupt
         '''
-        _handle_error(_lib.clingo_solve_handle_cancel(self._rep), self._handler.error)
+        _handle_error(_lib.clingo_solve_handle_cancel(self._rep), self._handler)
 
     def core(self) -> List[int]:
         '''
@@ -1211,7 +1214,7 @@ class SolveHandle:
 
         p_core = _ffi.new('clingo_literal_t**')
         p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_solve_handle_core(self._rep, p_core, p_size), self._handler.error)
+        _handle_error(_lib.clingo_solve_handle_core(self._rep, p_core, p_size), self._handler)
 
         return [p_core[0][i] for i in range(p_size[0])]
 
@@ -1227,7 +1230,7 @@ class SolveHandle:
         SolveResult
         '''
         p_res = _ffi.new('clingo_solve_result_bitset_t*')
-        _handle_error(_lib.clingo_solve_handle_get(self._rep, p_res), self._handler.error)
+        _handle_error(_lib.clingo_solve_handle_get(self._rep, p_res), self._handler)
         return SolveResult(p_res[0])
 
     def model(self) -> Optional[Model]:
@@ -1263,7 +1266,7 @@ class SolveHandle:
         p_model = _ffi.new('clingo_model_t**')
         _handle_error(
             _lib.clingo_solve_handle_model(self._rep, p_model),
-            self._handler.error)
+            self._handler)
         if p_model[0] == _ffi.NULL:
             return None
         return Model(p_model[0])
@@ -1279,7 +1282,7 @@ class SolveHandle:
         If the search has been started asynchronously, this function starts the search
         in the background.
         '''
-        _handle_error(_lib.clingo_solve_handle_resume(self._rep), self._handler.error)
+        _handle_error(_lib.clingo_solve_handle_resume(self._rep), self._handler)
 
     def wait(self, timeout: Optional[float]=None) -> bool:
         '''

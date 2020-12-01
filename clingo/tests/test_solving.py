@@ -1,22 +1,9 @@
 '''
 Tests for solving.
-
-TODO:
-- control
-  - add_clause/add_nogood
-- model
-  - contains
-  - extend
-  - is_true
-  - symbols
-  - cost
-  - number
-  - optimality_proven
-  - thread_id
 '''
 from unittest import TestCase
 from typing import cast
-from clingo import Control, ModelType, SolveHandle, SolveResult, parse_term
+from clingo import Control, Function, Model, ModelType, SolveHandle, SolveResult, SymbolicAtom, parse_term
 
 def _p(*models):
     return [[parse_term(symbol) for symbol in model] for model in models]
@@ -163,3 +150,57 @@ class TestSymbol(TestCase):
         self.ctl.solve(on_model=self.mcb.on_model)
         self.assertEqual(self.mcb.last[0], ModelType.BraveConsequences)
         self.assertEqual([self.mcb.last[1]], _p(['a', 'b', 'c']))
+
+    def test_model(self):
+        '''
+        Test functions of model.
+        '''
+        def on_model(m: Model):
+            self.assertTrue(m.contains(Function('a')))
+            self.assertTrue(m.is_true(cast(SymbolicAtom, m.context.symbolic_atoms[Function('a')]).literal))
+            self.assertFalse(m.is_true(1000))
+            self.assertEqual(m.thread_id, 0)
+            self.assertEqual(m.number, 1)
+            self.assertFalse(m.optimality_proven)
+            self.assertEqual(m.cost, [3])
+            m.extend([Function('e')])
+            self.assertEqual(m.symbols(theory=True), [Function('e')])
+        self.ctl.add("base", [], "a. b. c. #minimize { 1,a:a; 1,b:b; 1,c:c }.")
+        self.ctl.ground([("base", [])])
+        self.ctl.solve(on_model=on_model)
+
+    def test_control_clause(self):
+        '''
+        Test adding clauses while solving.
+        '''
+        self.ctl.add("base", [], "1 {a; b; c} 1.")
+        self.ctl.ground([("base", [])])
+        with cast(SolveHandle, self.ctl.solve(on_model=self.mcb.on_model, yield_=True, async_=False)) as hnd:
+            for m in hnd:
+                clause = []
+                if m.contains(Function('a')):
+                    clause.append((Function('b'), False))
+                else:
+                    clause.append((Function('a'), False))
+                m.context.add_clause(clause)
+
+            self._check_sat(hnd.get())
+            self.assertEqual(len(self.mcb.models), 2)
+
+    def test_control_nogood(self):
+        '''
+        Test adding nogoods while solving.
+        '''
+        self.ctl.add("base", [], "1 {a; b; c} 1.")
+        self.ctl.ground([("base", [])])
+        with cast(SolveHandle, self.ctl.solve(on_model=self.mcb.on_model, yield_=True, async_=False)) as hnd:
+            for m in hnd:
+                clause = []
+                if m.contains(Function('a')):
+                    clause.append((Function('b'), True))
+                else:
+                    clause.append((Function('a'), True))
+                m.context.add_nogood(clause)
+
+            self._check_sat(hnd.get())
+            self.assertEqual(len(self.mcb.models), 2)
