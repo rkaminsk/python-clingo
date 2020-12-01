@@ -460,16 +460,18 @@ def parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, messa
     _handle_error(_lib.clingo_parse_term(string.encode(), c_cb, c_handle, message_limit, p_sym))
     return Symbol(p_sym[0])
 
-# {{{1 symbolic atoms [0%]
+# {{{1 symbolic atoms [100%]
 
-class SymbolicAtom(metaclass=ABCMeta):
+class SymbolicAtom:
     '''
     Captures a symbolic atom and provides properties to inspect its state.
     '''
-    def match(self, name: str, arity: int) -> bool:
-        '''
-        match(self, name: str, arity: int) -> bool
+    def __init__(self, rep, it):
+        self._rep = rep
+        self._it = it
 
+    def match(self, name: str, arity: int, positive: bool=True) -> bool:
+        '''
         Check if the atom matches the given signature.
 
         Parameters
@@ -480,6 +482,9 @@ class SymbolicAtom(metaclass=ABCMeta):
         arity : int
             The arity of the function.
 
+        positive : bool
+            Whether to match positive or negative signatures.
+
         Returns
         -------
         bool
@@ -489,41 +494,49 @@ class SymbolicAtom(metaclass=ABCMeta):
         --------
         Symbol.match
         '''
+        return self.symbol.match(name, arity, positive)
 
-    is_external: bool
-    '''
-    is_external: bool
+    @property
+    def is_external(self) -> bool:
+        '''
+        Whether the atom is an external atom.
+        '''
+        p_ret = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbolic_atoms_is_external(self._rep, self._it, p_ret))
+        return p_ret[0]
 
-    Whether the atom is an external atom.
+    @property
+    def is_fact(self) -> bool:
+        '''
+        Whether the atom is a fact.
+        '''
+        p_ret = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbolic_atoms_is_fact(self._rep, self._it, p_ret))
+        return p_ret[0]
 
-    '''
-    is_fact: bool
-    '''
-    is_fact: bool
+    @property
+    def literal(self) -> int:
+        '''
+        The program literal associated with the atom.
+        '''
+        p_ret = _ffi.new('clingo_literal_t*')
+        _handle_error(_lib.clingo_symbolic_atoms_literal(self._rep, self._it, p_ret))
+        return p_ret[0]
 
-    Whether the atom is a fact.
+    @property
+    def symbol(self) -> Symbol:
+        '''
+        The representation of the atom in form of a symbol.
+        '''
+        p_ret = _ffi.new('clingo_symbol_t*')
+        _handle_error(_lib.clingo_symbolic_atoms_symbol(self._rep, self._it, p_ret))
+        return Symbol(p_ret[0])
 
-    '''
-    literal: int
-    '''
-    literal: int
-
-    The program literal associated with the atom.
-
-    '''
-    symbol: Symbol
-    '''
-    symbol: Symbol
-
-    The representation of the atom in form of a symbol.
-
-    '''
-
-class SymbolicAtoms(Lookup[Union[Symbol,int],SymbolicAtom], metaclass=ABCMeta):
+class SymbolicAtoms:
     '''
     This class provides read-only access to the atom base of the grounder.
 
-    Implements: `Lookup[Union[Symbol,int],SymbolicAtom]`.
+    Implements: `Lookup[Symbol,SymbolicAtom]`.
 
     Examples
     --------
@@ -553,10 +566,46 @@ class SymbolicAtoms(Lookup[Union[Symbol,int],SymbolicAtom], metaclass=ABCMeta):
     def __init__(self, rep):
         self._rep = rep
 
+    def _iter(self, c_sig) -> Iterator[SymbolicAtom]:
+        p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
+        p_valid = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbolic_atoms_begin(self._rep, c_sig, p_it))
+        while True:
+            _handle_error(_lib.clingo_symbolic_atoms_is_valid(self._rep, p_it[0], p_valid))
+            if not p_valid[0]:
+                break
+            yield SymbolicAtom(self._rep, p_it[0])
+            _handle_error(_lib.clingo_symbolic_atoms_next(self._rep, p_it[0], p_it))
+
+    def __iter__(self) -> Iterator[SymbolicAtom]:
+        yield from self._iter(_ffi.NULL)
+
+    def __contains__(self, symbol: Symbol) -> bool:
+        p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
+        _handle_error(_lib.clingo_symbolic_atoms_find(self._rep, symbol._rep, p_it))
+
+        p_valid = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbolic_atoms_is_valid(self._rep, p_it[0], p_valid))
+        return p_valid[0]
+
+    def __getitem__(self, symbol: Symbol) -> Optional[SymbolicAtom]:
+        p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
+        _handle_error(_lib.clingo_symbolic_atoms_find(self._rep, symbol._rep, p_it))
+
+        p_valid = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbolic_atoms_is_valid(self._rep, p_it[0], p_valid))
+        if not p_valid[0]:
+            return None
+
+        return SymbolicAtom(self._rep, p_it[0])
+
+    def __len__(self) -> int:
+        p_size = _ffi.new('size_t*')
+        _handle_error(_lib.clingo_symbolic_atoms_size(self._rep, p_size))
+        return p_size[0]
+
     def by_signature(self, name: str, arity: int, positive: bool=True) -> Iterator[SymbolicAtom]:
         '''
-        by_signature(self, name: str, arity: int, positive: bool=True) -> Iterator[SymbolicAtom]
-
         Return an iterator over the symbolic atoms with the given signature.
 
         Arguments
@@ -572,15 +621,26 @@ class SymbolicAtoms(Lookup[Union[Symbol,int],SymbolicAtom], metaclass=ABCMeta):
         -------
         Iterator[SymbolicAtom]
         '''
+        p_sig = _ffi.new('clingo_signature_t*')
+        _handle_error(_lib.clingo_signature_create(name.encode(), arity, positive, p_sig))
+        yield from self._iter(p_sig[0])
 
-    signatures: List[Tuple[str,int,bool]]
-    '''
-    signatures: List[Tuple[str,int,bool]]
+    @property
+    def signatures(self) -> List[Tuple[str,int,bool]]:
+        '''
+        The list of predicate signatures occurring in the program.
 
-    The list of predicate signatures occurring in the program.
+        The Boolean indicates the sign of the signature.
+        '''
+        p_size = _ffi.new('size_t*')
+        _handle_error(_lib.clingo_symbolic_atoms_signatures_size(self._rep, p_size))
 
-    The Boolean indicates the sign of the signature.
-    '''
+        p_sigs = _ffi.new('clingo_signature_t[]', p_size[0])
+        _handle_error(_lib.clingo_symbolic_atoms_signatures(self._rep, p_sigs, p_size[0]))
+
+        return [ (_ffi.string(_lib.clingo_signature_name(c_sig)).decode(),
+                  _lib.clingo_signature_arity(c_sig),
+                  _lib.clingo_signature_is_positive(c_sig)) for c_sig in p_sigs ]
 
 # {{{1 theory atoms [0%]
 
@@ -1112,7 +1172,7 @@ class SolveHandle:
         self._rep = rep
         self._handler = handler
 
-    def __iter__(self) -> Iterable[Model]:
+    def __iter__(self) -> Iterator[Model]:
         while True:
             self.resume()
             m = self.model()
@@ -1204,6 +1264,8 @@ class SolveHandle:
         _handle_error(
             _lib.clingo_solve_handle_model(self._rep, p_model),
             self._handler.error)
+        if p_model[0] == _ffi.NULL:
+            return None
         return Model(p_model[0])
 
     def resume(self) -> None:
@@ -1237,9 +1299,7 @@ class SolveHandle:
             next result is ready.
         '''
         p_res = _ffi.new('bool*')
-        _handle_error(
-            _lib.clingo_solve_handle_wait(self._rep, 0 if timeout is None else timeout, p_res),
-            self._handler.error)
+        _lib.clingo_solve_handle_wait(self._rep, 0 if timeout is None else timeout, p_res)
         return p_res[0]
 
 # {{{1 propagators [0%]
@@ -3140,8 +3200,6 @@ class Control:
               yield_: bool=False,
               async_: bool=False) -> Union[SolveHandle,SolveResult]:
         '''
-        solve(self, assumptions: Iterable[Union[Tuple[Symbol,bool],int]]=[], on_model: Callable[[Model],Optional[bool]]=None, on_statistics : Callable[[StatisticsMap,StatisticsMap],None]=None, on_finish: Callable[[SolveResult],None]=None, on_core: Callable[[Sequence[int]],None]=None, yield_: bool=False, async_: bool=False) -> Union[SolveHandle,SolveResult]
-
         Starts a search.
 
         Parameters

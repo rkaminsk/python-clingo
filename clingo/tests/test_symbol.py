@@ -1,7 +1,5 @@
 '''
 Test clingo's Symbol class.
-
-TODO: complete!
 '''
 from unittest import TestCase
 
