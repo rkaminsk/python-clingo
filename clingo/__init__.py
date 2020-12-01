@@ -89,9 +89,9 @@ def _clingo_version():
 
 def _handle_error(ret, handler=None):
     if not ret:
-        if handler is not None and handler.error is not None:
-            raise handler.error[0](handler.error[1]).with_traceback(handler.error[2])
         code = _lib.clingo_error_code()
+        if code == _lib.clingo_error_unknown and handler is not None and handler.error is not None:
+            raise handler.error[0](handler.error[1]).with_traceback(handler.error[2])
         msg = _ffi.string(_lib.clingo_error_message()).decode()
         if code == _lib.clingo_error_bad_alloc:
             raise MemoryError(msg)
@@ -102,6 +102,7 @@ def _cb_error_handler(param: str):
         if traceback is not None:
             handler = _ffi.from_handle(traceback.tb_frame.f_locals[param])
             handler.error = (exception, exc_value, traceback)
+            _lib.clingo_set_error(_lib.clingo_error_unknown, "python exception")
         else:
             _lib.clingo_set_error(_lib.clingo_error_runtime, "error in callback".encode())
         return False
@@ -549,6 +550,9 @@ class SymbolicAtoms(Lookup[Union[Symbol,int],SymbolicAtom], metaclass=ABCMeta):
         ...  for x in prg.symbolic_atoms.by_signature("p", 1)]
         [(p(1), True, False), (p(3), False, False), (p(2), False, True)]
     '''
+    def __init__(self, rep):
+        self._rep = rep
+
     def by_signature(self, name: str, arity: int, positive: bool=True) -> Iterator[SymbolicAtom]:
         '''
         by_signature(self, name: str, arity: int, positive: bool=True) -> Iterator[SymbolicAtom]
@@ -718,70 +722,82 @@ class TheoryAtom(metaclass=ABCMeta):
 
     '''
 
-# {{{1 solving [1%]
+# {{{1 solving [100%]
 
-class SolveResult(metaclass=ABCMeta):
+class SolveResult:
     '''
     Captures the result of a solve call.
 
     `SolveResult` objects cannot be constructed from Python. Instead they are
     returned by the solve methods of the Control object.
     '''
-    exhausted: bool
-    '''
-    exhausted: bool
+    def __init__(self, rep):
+        self._rep = rep
 
-    True if the search space was exhausted.
+    @property
+    def exhausted(self) -> bool:
+        '''
+        True if the search space was exhausted.
+        '''
+        return (_lib.clingo_solve_result_exhausted & self._rep) != 0
 
-    '''
-    interruped: bool
-    '''
-    interruped: bool
+    @property
+    def interrupted(self) -> bool:
+        '''
+        True if the search was interrupted.
+        '''
+        return (_lib.clingo_solve_result_interrupted & self._rep) != 0
 
-    True if the search was interrupted.
-    '''
-    satisfiable: Optional[bool]
-    '''
-    satisfiable: Optional[bool]
+    @property
+    def satisfiable(self) -> Optional[bool]:
+        '''
+        True if the problem is satisfiable, False if the problem is unsatisfiable, or
+        None if the satisfiablity is not known.
+        '''
+        if (_lib.clingo_solve_result_satisfiable & self._rep) != 0:
+            return True
+        if (_lib.clingo_solve_result_unsatisfiable & self._rep) != 0:
+            return False
+        return None
 
-    True if the problem is satisfiable, False if the problem is unsatisfiable, or
-    None if the satisfiablity is not known.
+    @property
+    def unknown(self) -> bool:
+        '''
+        True if the satisfiablity is not known.
 
-    '''
-    unknown: bool
-    '''
-    unknown: bool
+        This is equivalent to satisfiable is None.
+        '''
+        return self.satisfiable is None
 
-    True if the satisfiablity is not known.
+    @property
+    def unsatisfiable(self) -> Optional[bool]:
+        '''
+        True if the problem is unsatisfiable, false if the problem is satisfiable, or
+        `None` if the satisfiablity is not known.
+        '''
+        if (_lib.clingo_solve_result_unsatisfiable & self._rep) != 0:
+            return True
+        if (_lib.clingo_solve_result_satisfiable & self._rep) != 0:
+            return False
+        return None
 
-    This is equivalent to satisfiable is None.
-
-    '''
-    unsatisfiable: Optional[bool]
-    '''
-    unsatisfiable: Optional[bool]
-
-    True if the problem is unsatisfiable, false if the problem is satisfiable, or
-    `None` if the satisfiablity is not known.
-
-    '''
-
-class SolveControl(metaclass=ABCMeta):
+class SolveControl:
     '''
     Object that allows for controlling a running search.
 
     `SolveControl` objects cannot be constructed from Python. Instead they are
     available via `Model.context`.
     '''
-    def add_clause(self, literals: Iterable[Union[Tuple[Symbol,bool],int]]) -> None:
-        '''
-        add_clause(self, literals: Iterable[Union[Tuple[Symbol,bool],int]]) -> None
+    def __init__(self, rep):
+        self._rep = rep
 
+    def add_clause(self, literals: Sequence[Union[Tuple[Symbol,bool],int]]) -> None:
+        '''
         Add a clause that applies to the current solving step during the search.
 
         Parameters
         ----------
-        literals : Iterable[Union[Tuple[Symbol,bool],int]]
+        literals : Sequence[Union[Tuple[Symbol,bool],int]]
             List of literals either represented as pairs of symbolic atoms and Booleans
             or as program literals.
 
@@ -790,33 +806,45 @@ class SolveControl(metaclass=ABCMeta):
         This function can only be called in a model callback or while iterating when
         using a `SolveHandle`.
         '''
+        atoms = self.symbolic_atoms
+        p_lits = _ffi.new('clingo_literal_t[]', len(literals))
+        for i, lit in enumerate(literals):
+            if isinstance(lit, int):
+                p_lits[i] = lit
+            else:
+                atom = atoms[lit[0]]
+                if atom is not None:
+                    slit = atom.literal
+                else:
+                    slit = -1
+                p_lits[i] = slit if lit[1] else -slit
 
-    def add_nogood(self, literals: Iterable[Union[Tuple[Symbol,bool],int]]) -> None:
+        _handle_error(_lib.clingo_solve_control_add_clause(self._rep, p_lits, len(literals)))
+
+    def _invert(self, lit: Union[Tuple[Symbol,bool],int]) -> Union[Tuple[Symbol,bool],int]:
+        if isinstance(lit, int):
+            return -lit
+        return lit[0], not lit[1]
+
+    def add_nogood(self, literals: Sequence[Union[Tuple[Symbol,bool],int]]) -> None:
         '''
-        add_nogood(self, literals: Iterable[Union[Tuple[Symbol,bool],int]]) -> None
-
         Equivalent to `SolveControl.add_clause` with the literals inverted.
         '''
+        self.add_clause([self._invert(lit) for lit in literals])
 
-    symbolic_atoms: SymbolicAtoms
-    '''
-    symbolic_atoms: SymbolicAtoms
+    @property
+    def symbolic_atoms(self) -> SymbolicAtoms:
+        '''
+        `SymbolicAtoms` object to inspect the symbolic atoms.
+        '''
+        p_atoms = _ffi.new('clingo_symbolic_atoms_t const **')
+        _handle_error(_lib.clingo_solve_control_symbolic_atoms(self._rep, p_atoms))
 
-    `SymbolicAtoms` object to inspect the symbolic atoms.
+        return SymbolicAtoms(p_atoms[0])
 
-    '''
-
-class ModelType(Hashable, Comparable, metaclass=ABCMeta):
+class ModelType(Enum):
     '''
     Enumeration of the different types of models.
-
-    `ModelType` objects have a readable string representation, implement Python's
-    rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Implements: `Hashable`, `Comparable`.
 
     Attributes
     ----------
@@ -827,9 +855,9 @@ class ModelType(Hashable, Comparable, metaclass=ABCMeta):
     CautiousConsequences : ModelType
         The model stores the set of cautious consequences.
     '''
-    # BraveConsequences: ModelType
-    # CautiousConsequences: ModelType
-    # StableModel: ModelType
+    BraveConsequences = _lib.clingo_model_type_brave_consequences
+    CautiousConsequences: _lib.clingo_model_type_cautious_consequences
+    StableModel: _lib.clingo_model_type_stable_model
 
 class Model:
     '''
@@ -887,16 +915,18 @@ class Model:
         -----
         The atom must be represented using a function symbol.
         '''
+        # pylint: disable=protected-access
+        p_ret = _ffi.new('bool*')
+        _handle_error(_lib.clingo_model_contains(self._rep, atom._rep, p_ret))
+        return p_ret[0]
 
-    def extend(self, symbols: Iterable[Symbol]) -> None:
+    def extend(self, symbols: Sequence[Symbol]) -> None:
         '''
-        extend(self, symbols: Iterable[Symbol]) -> None
-
         Extend a model with the given symbols.
 
         Parameters
         ----------
-        symbols : Iterable[Symbol]
+        symbols : Sequence[Symbol]
             The symbols to add to the model.
 
         Returns
@@ -908,6 +938,8 @@ class Model:
         This only has an effect if there is an underlying clingo application, which
         will print the added symbols.
         '''
+        c_symbols = _ffi.new('clingo_symbol_t[]', len(symbols))
+        _handle_error(_lib.clingo_model_extend(self._rep, c_symbols, len(symbols)))
 
     def is_true(self, literal: int) -> bool:
         '''
@@ -925,11 +957,13 @@ class Model:
         bool
             Whether the given program literal is true.
         '''
+        p_ret = _ffi.new('bool*')
+        _handle_error(_lib.clingo_model_is_true(self._rep, literal, p_ret))
+        return p_ret[0]
 
-    def symbols(self, atoms: bool=False, terms: bool=False, shown: bool=False, csp: bool=False, theory: bool=False, complement: bool=False) -> List[Symbol]:
+    def symbols(self, atoms: bool=False, terms: bool=False, shown: bool=False, csp: bool=False,
+                theory: bool=False, complement: bool=False) -> List[Symbol]:
         '''
-        symbols(self, atoms: bool=False, terms: bool=False, shown: bool=False, csp: bool=False, theory: bool=False, complement: bool=False) -> List[Symbol]
-
         Return the list of atoms, terms, or CSP assignments in the model.
 
         Parameters
@@ -959,65 +993,100 @@ class Model:
         are represented using functions with name `"$"` where the first argument is the
         name of the CSP variable and the second its value.
         '''
+        show = 0
+        if atoms:
+            show |= _lib.clingo_show_type_atoms
+        if terms:
+            show |= _lib.clingo_show_type_terms
+        if shown:
+            show |= _lib.clingo_show_type_shown
+        if csp:
+            show |= _lib.clingo_show_type_csp
+        if theory:
+            show |= _lib.clingo_show_type_theory
+        if complement:
+            show |= _lib.clingo_show_type_complement
+
         p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_model_symbols_size(self._rep, _lib.clingo_show_type_shown, p_size))
+        _handle_error(_lib.clingo_model_symbols_size(self._rep, show, p_size))
+
         p_symbols = _ffi.new('clingo_symbol_t[]', p_size[0])
-        _handle_error(_lib.clingo_model_symbols(self._rep, _lib.clingo_show_type_shown, p_symbols, p_size[0]))
+        _handle_error(_lib.clingo_model_symbols(self._rep, show, p_symbols, p_size[0]))
+
         symbols = []
         for c_symbol in p_symbols:
             symbols.append(Symbol(c_symbol))
         return symbols
 
     def __str__(self):
-        return " ".join(map(str, self.symbols()))
+        return " ".join(map(str, self.symbols(shown=True)))
 
-    context: SolveControl
-    '''
+    @property
+    def context(self) -> SolveControl:
+        '''
+        Object that allows for controlling the running search.
+        '''
+        p_ctl = _ffi.new('clingo_solve_control_t**')
+        _handle_error(_lib.clingo_model_context(self._rep, p_ctl))
 
-    context: SolveControl
+        return SolveControl(p_ctl[0])
 
-    Object that allows for controlling the running search.
+    @property
+    def cost(self) -> List[int]:
+        '''
+        Return the list of integer cost values of the model.
 
-    '''
-    cost: List[int]
-    '''
-    cost: List[int]
+        The return values correspond to clasp's cost output.
+        '''
+        p_size = _ffi('size_t*')
+        _handle_error(_lib.clingo_model_cost_size(self._rep, p_size))
 
-    Return the list of integer cost values of the model.
+        p_costs = _ffi.new('int64_t[]', p_size[0])
+        _handle_error(_lib.clingo_model_cost(self._rep, p_costs, p_size))
 
-    The return values correspond to clasp's cost output.
+        return list(p_costs)
 
-    '''
-    number: int
-    '''
-    number: int
+    @property
+    def number(self) -> int:
+        '''
+        The running number of the model.
+        '''
+        p_num = _ffi.new('uint64_t*')
+        _handle_error(_lib.clingo_model_number(self._rep, p_num))
 
-    The running number of the model.
+        return p_num[0]
 
-    '''
-    optimality_proven: bool
-    '''
-    optimality_proven: bool
+    @property
+    def optimality_proven(self) -> bool:
+        '''
+        Whether the optimality of the model has been proven.
+        '''
+        p_proof = _ffi.new('bool*')
+        _handle_error(_lib.clingo_model_optimality_proven(self._rep, p_proof))
 
-    Whether the optimality of the model has been proven.
+        return p_proof[0]
 
-    '''
-    thread_id: int
-    '''
-    thread_id: int
+    @property
+    def thread_id(self) -> int:
+        '''
+        The id of the thread which found the model.
+        '''
+        p_num = _ffi.new('clingo_id_t*')
+        _handle_error(_lib.clingo_model_number(self._rep, p_num))
 
-    The id of the thread which found the model.
+        return p_num[0]
 
-    '''
-    type: ModelType
-    '''
-    type: ModelType
+    @property
+    def type(self) -> ModelType:
+        '''
+        The type of the model.
+        '''
+        p_type = _ffi.new('clingo_id_t*')
+        _handle_error(_lib.clingo_model_type(self._rep, p_type))
 
-    The type of the model.
+        return ModelType(p_type[0])
 
-    '''
-
-class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
+class SolveHandle:
     '''
     Handle for solve calls.
 
@@ -1039,10 +1108,26 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
     Blocking functions in this object release the GIL. They are not thread-safe
     though.
     '''
+    def __init__(self, rep, handler):
+        self._rep = rep
+        self._handler = handler
+
+    def __iter__(self) -> Iterable[Model]:
+        while True:
+            self.resume()
+            m = self.model()
+            if m is None:
+                break
+            yield m
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        _handle_error(_lib.clingo_solve_handle_close(self._rep), self._handler.error)
+
     def cancel(self) -> None:
         '''
-        cancel(self) -> None
-
         Cancel the running search.
 
         Returns
@@ -1053,11 +1138,10 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
         --------
         Control.interrupt
         '''
+        _handle_error(_lib.clingo_solve_handle_cancel(self._rep), self._handler.error)
 
     def core(self) -> List[int]:
         '''
-        core(self) -> List[int]
-
         The subset of assumptions that made the problem unsatisfiable.
 
         Returns
@@ -1065,10 +1149,14 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
         List[int]
         '''
 
+        p_core = _ffi.new('clingo_literal_t**')
+        p_size = _ffi.new('size_t*')
+        _handle_error(_lib.clingo_solve_handle_core(self._rep, p_core, p_size), self._handler.error)
+
+        return [p_core[i] for i in range(p_size[0])]
+
     def get(self) -> SolveResult:
         '''
-        get(self) -> SolveResult
-
         Get the result of a solve call.
 
         If the search is not completed yet, the function blocks until the result is
@@ -1078,6 +1166,9 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
         -------
         SolveResult
         '''
+        p_res = _ffi.new('clingo_solve_result_bitset_t*')
+        _handle_error(_lib.clingo_solve_handle_get(self._rep, p_res), self._handler.error)
+        return SolveResult(p_res[0])
 
     def model(self) -> Optional[Model]:
         '''
@@ -1109,6 +1200,11 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
             a b
             None
         '''
+        p_model = _ffi.new('clingo_model_t**')
+        _handle_error(
+            _lib.clingo_solve_handle_model(self._rep, p_model),
+            self._handler.error)
+        return Model(p_model[0])
 
     def resume(self) -> None:
         '''
@@ -1121,6 +1217,7 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
         If the search has been started asynchronously, this function starts the search
         in the background.
         '''
+        _handle_error(_lib.clingo_solve_handle_resume(self._rep), self._handler.error)
 
     def wait(self, timeout: Optional[float]=None) -> bool:
         '''
@@ -1139,6 +1236,11 @@ class SolveHandle(ContextManager['SolveHandle'], metaclass=ABCMeta):
             Returns a Boolean indicating whether the solve call has finished or the
             next result is ready.
         '''
+        p_res = _ffi.new('bool*')
+        _handle_error(
+            _lib.clingo_solve_handle_wait(self._rep, 0 if timeout is None else timeout, p_res),
+            self._handler.error)
+        return p_res[0]
 
 # {{{1 propagators [0%]
 
@@ -1548,37 +1650,23 @@ class PropagateInit(metaclass=ABCMeta):
 
     assignment: Assignment
     '''
-    assignment: Assignment
-
     `Assignment` object capturing the top level assignment.
-
     '''
     check_mode: PropagatorCheckMode
     '''
-    check_mode: PropagatorCheckMode
-
     `PropagatorCheckMode` controlling when to call `Propagator.check`.
     '''
     number_of_threads: int
     '''
-    number_of_threads: int
-
     The number of solver threads used in the corresponding solve call.
-
     '''
     symbolic_atoms: SymbolicAtoms
     '''
-    symbolic_atoms: SymbolicAtoms
-
     The symbolic atoms captured by a `SymbolicAtoms` object.
-
     '''
-    theory_atoms: TheoryAtomIter
+    theory_atoms: Iterable[TheoryAtom]
     '''
-    theory_atoms: TheoryAtomIter
-
     A `TheoryAtomIter` object to iterate over all theory atoms.
-
     '''
 
 class PropagateControl(metaclass=ABCMeta):
@@ -3043,7 +3131,14 @@ class Control:
             SAT
         '''
 
-    def solve(self, assumptions: Iterable[Union[Tuple[Symbol,bool],int]]=[], on_model: Callable[[Model],Optional[bool]]=None, on_statistics : Callable[[StatisticsMap,StatisticsMap],None]=None, on_finish: Callable[[SolveResult],None]=None, on_core: Callable[[Sequence[int]],None]=None, yield_: bool=False, async_: bool=False) -> Union[SolveHandle,SolveResult]:
+    def solve(self,
+              assumptions: Iterable[Union[Tuple[Symbol,bool],int]]=[],
+              on_model: Callable[[Model],Optional[bool]]=None,
+              on_statistics : Callable[[StatisticsMap,StatisticsMap],None]=None,
+              on_finish: Callable[[SolveResult],None]=None,
+              on_core: Callable[[Sequence[int]],None]=None,
+              yield_: bool=False,
+              async_: bool=False) -> Union[SolveHandle,SolveResult]:
         '''
         solve(self, assumptions: Iterable[Union[Tuple[Symbol,bool],int]]=[], on_model: Callable[[Model],Optional[bool]]=None, on_statistics : Callable[[StatisticsMap,StatisticsMap],None]=None, on_finish: Callable[[SolveResult],None]=None, on_core: Callable[[Sequence[int]],None]=None, yield_: bool=False, async_: bool=False) -> Union[SolveHandle,SolveResult]
 
@@ -3145,12 +3240,28 @@ class Control:
             Answer: b
             SAT
         '''
-        p_handle = _ffi.new('clingo_solve_handle_t**')
+        # pylint: disable=protected-access
         handler = _SolveEventHandler(on_model)
         self._handler = _ffi.new_handle(handler)
-        _handle_error(_lib.clingo_control_solve(self._ctl, 0, _ffi.NULL, 0, _lib._clingo_solve_event_callback, self._handler, p_handle), handler)
-        p_res = _ffi.new('clingo_solve_result_bitset_t*')
-        _handle_error(_lib.clingo_solve_handle_get(p_handle[0], p_res), handler)
+
+        mode = 0
+        if yield_:
+            mode |= _lib.clingo_solve_mode_yield
+        if async_:
+            mode |= _lib.clingo_solve_mode_async
+
+        p_handle = _ffi.new('clingo_solve_handle_t**')
+        _handle_error(_lib.clingo_control_solve(
+            self._ctl, mode,
+            _ffi.NULL, 0,
+            _lib._clingo_solve_event_callback, self._handler,
+            p_handle), handler)
+        handle = SolveHandle(p_handle[0], handler)
+
+        if not yield_ and not async_:
+            with handle:
+                return handle.get()
+        return handle
 
     configuration: Configuration
     '''
@@ -3250,10 +3361,8 @@ class Control:
 
     `SymbolicAtoms` object to inspect the symbolic atoms.
     '''
-    theory_atoms: TheoryAtomIter
+    theory_atoms: Iterable[TheoryAtom]
     '''
-    theory_atoms: TheoryAtomIter
-
     A `TheoryAtomIter` object, which can be used to iterate over the theory atoms.
     '''
 
