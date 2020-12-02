@@ -73,7 +73,7 @@ from enum import Enum
 from functools import total_ordering
 from os import _exit
 from traceback import print_exception
-from sys import stderr
+import sys
 
 from _clingo import ffi as _ffi, lib as _lib # type: ignore # pylint: disable=no-name-in-module
 from .types import Comparable, Lookup
@@ -109,7 +109,7 @@ def _cb_error_handler(param: str):
         if traceback is not None:
             handler = _ffi.from_handle(traceback.tb_frame.f_locals[param])
             handler.error = (exception, exc_value, traceback)
-            _lib.clingo_set_error(_lib.clingo_error_unknown, "python exception")
+            _lib.clingo_set_error(_lib.clingo_error_unknown, "python exception".encode())
         else:
             _lib.clingo_set_error(_lib.clingo_error_runtime, "error in callback".encode())
         return False
@@ -117,7 +117,7 @@ def _cb_error_handler(param: str):
 
 def _cb_error_panic(exception, exc_value, traceback):
     print_exception(exception, exc_value, traceback)
-    stderr.write('PANIC: exception in nothrow scope')
+    sys.stderr.write('PANIC: exception in nothrow scope')
     _exit(1)
 
 # {{{1 basics [100%]
@@ -2516,6 +2516,9 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
         Answer: a
         SAT
     '''
+    def __init__(self, rep):
+        self._rep = rep
+
     def add_acyc_edge(self, node_u: int, node_v: int, condition: Iterable[int]) -> None:
         '''
         add_acyc_edge(self, node_u: int, node_v: int, condition: Iterable[int]) -> None
@@ -3000,7 +3003,7 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
             The values of the map.
         '''
 
-# {{{1 control [1%]
+# {{{1 control [80%]
 
 class _SolveEventHandler:
     # pylint: disable=missing-function-docstring
@@ -3042,15 +3045,43 @@ def _clingo_solve_event_callback(type_, event, data, goon):
 
     return True
 
+class _Context:
+    def __init__(self, context):
+        self.error = None
+        self.context = context
+
+    def __call__(self, name, args):
+        context = self.context if hasattr(self.context, name) else sys.modules['__main__']
+        return getattr(context, name)(*args)
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_ground_callback(location, name, arguments, arguments_size, data, symbol_callback, symbol_callback_data):
+    '''
+    Low-level ground callback.
+    '''
+    # Note: location could be attached to error message
+    # pylint: disable=protected-access,unused-argument
+    context = _ffi.from_handle(data)
+
+    args = []
+    for i in range(arguments_size):
+        args.append(Symbol(arguments[i]))
+    symbols = list(context(_ffi.string(name).decode(), args))
+
+    c_symbols = _ffi.new('clingo_symbol_t[]', len(symbols))
+    for i, sym in enumerate(symbols):
+        c_symbols[i] = sym._rep
+    symbol_callback(c_symbols, len(symbols), symbol_callback_data)
+
+    return True
+
 class Control:
     '''
-    Control(arguments: Iterable[str]=[], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> Control
-
     Control object for the grounding/solving process.
 
     Parameters
     ----------
-    arguments : Iterable[str]
+    arguments : Sequence[str]
         Arguments to the grounder and solver.
     logger : Callable[[MessageCode,str],None]=None
         Function to intercept messages normally printed to standard error.
@@ -3063,15 +3094,22 @@ class Control:
     supported. Furthermore, a `Control` object is blocked while a search call is
     active; you must not call any member function during search.
     '''
-    def __init__(self, arguments: Sequence[str]=[], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20):
-        # TODO: logger, default value
+    def __init__(self, arguments: Sequence[str]=[],
+                 logger: Callable[[MessageCode,str],None]=None, message_limit: int=20):
+        # pylint: disable=protected-access,dangerous-default-value
+        if logger is not None:
+            c_handle = _ffi.new_handle(logger)
+            c_cb = _lib._clingo_logger_callback
+        else:
+            c_handle = _ffi.NULL
+            c_cb = _ffi.NULL
         c_mem = []
         c_args = _ffi.new('char*[]', len(arguments))
         for i, arg in enumerate(arguments):
             c_mem.append(_ffi.new("char[]", arg.encode()))
             c_args[i] = c_mem[-1]
         p_ctl = _ffi.new('clingo_control_t **')
-        _handle_error(_lib.clingo_control_new(c_args, len(arguments), _ffi.NULL, _ffi.NULL, message_limit, p_ctl))
+        _handle_error(_lib.clingo_control_new(c_args, len(arguments), c_cb, c_handle, message_limit, p_ctl))
         self._rep = p_ctl[0]
         self._handler = None
 
@@ -3080,15 +3118,13 @@ class Control:
 
     def add(self, name: str, parameters: Sequence[str], program: str) -> None:
         '''
-        add(self, name: str, parameters: Iterable[str], program: str) -> None
-
         Extend the logic program with the given non-ground logic program in string form.
 
         Parameters
         ----------
         name : str
             The name of program block to add.
-        parameters : Iterable[str]
+        parameters : Sequence[str]
             The parameters of the program block to add.
         program : str
             The non-ground program in string form.
@@ -3108,10 +3144,14 @@ class Control:
             c_params[i] = c_mem[-1]
         _handle_error(_lib.clingo_control_add(self._rep, name.encode(), c_params, len(parameters), program.encode()))
 
+    def _program_atom(self, lit: Union[Symbol,int]) -> int:
+        if isinstance(lit, int):
+            return lit
+        satom = self.symbolic_atoms[lit]
+        return 0 if satom is None else satom.literal
+
     def assign_external(self, external: Union[Symbol,int], truth: Optional[bool]) -> None:
         '''
-        assign_external(self, external: Union[Symbol,int], truth: Optional[bool]) -> None
-
         Assign a truth value to an external atom.
 
         Parameters
@@ -3142,10 +3182,16 @@ class Control:
         inverted.
         '''
 
+        if truth is None:
+            val = _lib.clingo_external_type_free
+        elif truth:
+            val = _lib.clingo_external_type_true
+        else:
+            val = _lib.clingo_external_type_false
+        _handle_error(_lib.clingo_control_assign_external(self._rep, self._program_atom(external), val))
+
     def backend(self) -> Backend:
         '''
-        backend(self) -> Backend
-
         Returns a `Backend` object providing a low level interface to extend a logic
         program.
 
@@ -3153,11 +3199,12 @@ class Control:
         -------
         Backend
         '''
+        p_backend = _ffi.new('clingo_backend_t**')
+        _handle_error(_lib.clingo_control_backend(self._rep, p_backend))
+        return Backend(p_backend[0])
 
     def cleanup(self) -> None:
         '''
-        cleanup(self) -> None
-
         Cleanup the domain used for grounding by incorporating information from the
         solver.
 
@@ -3185,11 +3232,10 @@ class Control:
         Typically, it is not necessary to call this function manually because automatic
         cleanups are enabled by default.
         '''
+        _handle_error(_lib.clingo_control_cleanup(self._rep))
 
     def get_const(self, name: str) -> Optional[Symbol]:
         '''
-        get_const(self, name: str) -> Optional[Symbol]
-
         Return the symbol for a constant definition of form: `#const name = symbol.`
 
         Parameters
@@ -3202,20 +3248,26 @@ class Control:
         Optional[Symbol]
             The function returns `None` if no matching constant definition exists.
         '''
+        p_exits = _ffi.new('bool*')
+        _handle_error(_lib.clingo_control_has_const(self._rep, name.encode(), p_exits))
+        if not p_exits[0]:
+            return None
+
+        p_sym = _ffi.new('clingo_symbol_t*')
+        _handle_error(_lib.clingo_control_get_const(self._rep, name.encode(), p_sym))
+        return Symbol(p_sym[0])
 
     def ground(self, parts: Sequence[Tuple[str,Sequence[Symbol]]], context: Any=None) -> None:
         '''
-        ground(self, parts: Iterable[Tuple[str,Iterable[Symbol]]], context: Any=None) -> None
-
         Ground the given list of program parts specified by tuples of names and arguments.
 
         Parameters
         ----------
-        parts : Iterable[Tuple[str,Iterable[Symbol]]]
+        parts : Sequence[Tuple[str,Sequence[Symbol]]]
             List of tuples of program names and program arguments to ground.
         context : Any=None
             A context object whose methods are called during grounding using the
-            `@`-syntax (if omitted methods, from the main module are used).
+            `@`-syntax (if omitted methods, those from the main module are used).
 
         Notes
         -----
@@ -3236,6 +3288,15 @@ class Control:
             Answer: q(1) q(2)
             SAT
         '''
+        # pylint: disable=protected-access,dangerous-default-value
+        handler = None
+        c_handler = _ffi.NULL
+        c_cb = _ffi.NULL
+        if context is not None:
+            handler = _Context(context)
+            c_handler = _ffi.new_handle(handler)
+            c_cb = _lib._clingo_ground_callback
+
         c_mem = []
         c_parts = _ffi.new("clingo_part_t[]", len(parts))
         for part, c_part in zip(parts, c_parts):
@@ -3247,12 +3308,11 @@ class Control:
                 c_part.params[i] = sym._rep
             c_part.size = len(part[1])
 
-        _handle_error(_lib.clingo_control_ground(self._rep, c_parts, len(parts), _ffi.NULL, _ffi.NULL))
+        _handle_error(_lib.clingo_control_ground(
+            self._rep, c_parts, len(parts), c_cb, c_handler), handler)
 
     def interrupt(self) -> None:
         '''
-        interrupt(self) -> None
-
         Interrupt the active solve call.
 
         Returns
@@ -3266,7 +3326,7 @@ class Control:
         result of the `Control.solve` method can be used to query if the search was
         interrupted.
         '''
-        _lib.clingo_control_interrupt(self._rep);
+        _lib.clingo_control_interrupt(self._rep)
 
     def load(self, path: str) -> None:
         '''
@@ -3463,7 +3523,7 @@ class Control:
 
         The following example shows how to yield models:
 
-        ]    >>> import clingo
+            >>> import clingo
             >>> ctl = clingo.Control("0")
             >>> ctl.add("p", [], "1 { a; b } 1.")
             >>> ctl.ground([("p", [])])
@@ -3489,7 +3549,7 @@ class Control:
             Answer: b
             SAT
         '''
-        # pylint: disable=protected-access
+        # pylint: disable=protected-access,dangerous-default-value
         handler = _SolveEventHandler(on_model, on_statistics, on_finish)
         self._handler = _ffi.new_handle(handler)
 
