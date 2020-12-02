@@ -3617,10 +3617,6 @@ class Control:
     If the enumeration assumption is enabled, then all information learnt from
     clasp's various enumeration modes is removed after a solve call. This includes
     enumeration of cautious or brave consequences, enumeration of answer sets with
-
-        p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
-        p_valid = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbolic_atoms_begin(self._rep, p_sig, p_it))
     or without projection, or finding optimal models; as well as clauses added with
     `SolveControl.add_clause`.
 
