@@ -1610,21 +1610,13 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
     The trail of assigned literals.
     '''
 
-class PropagatorCheckMode(Hashable, Comparable, metaclass=ABCMeta):
+class PropagatorCheckMode(Enum):
     '''
     Enumeration of supported check modes for propagators.
 
     Note that total checks are subject to the lock when a model is found. This
     means that information from previously found models can be used to discard
     assignments in check calls.
-
-    `PropagatorCheckMode` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Implements: `Hashable`, `Comparable`.
 
     Attributes
     ----------
@@ -1637,10 +1629,10 @@ class PropagatorCheckMode(Hashable, Comparable, metaclass=ABCMeta):
     Both : PropagatorCheckMode
         Call `Propagator.check` on propagation fixpoints and total assignments.
     '''
-    # Both: PropagatorCheckMode
-    # Fixpoint: PropagatorCheckMode
-    # Off: PropagatorCheckMode
-    # Total: PropagatorCheckMode
+    Both = _lib.clingo_propagator_check_mode_both
+    Fixpoint = _lib.clingo_propagator_check_mode_fixpoint
+    Off = _lib.clingo_propagator_check_mode_none
+    Total = _lib.clingo_propagator_check_mode_total
 
 class PropagateInit(metaclass=ABCMeta):
     '''
@@ -2709,9 +2701,9 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
         None
         '''
 
-# {{{1 configuration [0%]
+# {{{1 configuration [100%]
 
-class Configuration(metaclass=ABCMeta):
+class Configuration:
     '''
     Allows for changing the configuration of the underlying solver.
 
@@ -2756,10 +2748,74 @@ class Configuration(metaclass=ABCMeta):
         Answer: a b
         SAT
     '''
+    def __init__(self, rep, key):
+        # Note: we have to bypass __setattr__ to avoid infinite recursion
+        super().__setattr__("_rep", rep)
+        super().__setattr__("_key", key)
+
+    @property
+    def _type(self) -> int:
+        p_type = _ffi.new('clingo_configuration_type_bitset_t*')
+        _handle_error(_lib.clingo_configuration_type(self._rep, self._key, p_type))
+        return p_type[0]
+
+    def _get_subkey(self, name: str) -> Optional[int]:
+        if self._type & _lib.clingo_configuration_type_map:
+            p_haskey = _ffi.new('bool*')
+            _handle_error(_lib.clingo_configuration_map_has_subkey(self._rep, self._key, name.encode(), p_haskey))
+            if p_haskey[0]:
+                p_subkey = _ffi.new('clingo_id_t*')
+                _handle_error(_lib.clingo_configuration_map_at(self._rep, self._key, name.encode(), p_subkey))
+                return p_subkey[0]
+        return None
+
+    def __len__(self):
+        if self._type & _lib.clingo_configuration_type_array:
+            p_size = _ffi.new('size_t*')
+            _handle_error(_lib.clingo_configuration_array_size(self._rep, self._key, p_size))
+            return p_size[0]
+        return 0
+
+    def __getitem__(self, idx: int) -> 'Configuration':
+        if idx < 0 or idx >= len(self):
+            raise IndexError("invalid index")
+
+        p_subkey = _ffi.new('clingo_id_t*')
+        _handle_error(_lib.clingo_configuration_array_at(self._rep, self._key, idx, p_subkey))
+        return Configuration(self._rep, p_subkey[0])
+
+    def __getattr__(self, name: str) -> Union[None,str,'Configuration']:
+        key = self._get_subkey(name)
+        if key is None:
+            raise AttributeError(f'no attribute: {name}')
+
+        p_type = _ffi.new('clingo_configuration_type_bitset_t*')
+        _handle_error(_lib.clingo_configuration_type(self._rep, key, p_type))
+
+        if p_type[0] & _lib.clingo_configuration_type_value:
+            p_assigned = _ffi.new('bool*')
+            _handle_error(_lib.clingo_configuration_value_is_assigned(self._rep, key, p_assigned))
+            if not p_assigned[0]:
+                return None
+
+            p_size = _ffi.new('size_t*')
+            _handle_error(_lib.clingo_configuration_value_get_size(self._rep, key, p_size))
+
+            p_val = _ffi.new('char[]', p_size[0])
+            _handle_error(_lib.clingo_configuration_value_get(self._rep, key, p_val, p_size[0]))
+            return _ffi.string(p_val).decode()
+
+        return Configuration(self._rep, key)
+
+    def __setattr__(self, name: str, val: str) -> None:
+        key = self._get_subkey(name)
+        if key is None:
+            super().__setattr__(name, val)
+        else:
+            _handle_error(_lib.clingo_configuration_value_set(self._rep, key, val.encode()))
+
     def description(self, name: str) -> str:
         '''
-        description(self, name: str) -> str
-
         Get a description for a option or option group.
 
         Parameters
@@ -2771,16 +2827,30 @@ class Configuration(metaclass=ABCMeta):
         -------
         str
         '''
+        key = self._get_subkey(name)
+        if key is None:
+            raise RuntimeError(f'unknown option {name}')
+        p_description = _ffi.new('char**')
+        _handle_error(_lib.clingo_configuration_description(self._rep, key, p_description))
+        return _ffi.string(p_description[0]).decode()
 
-    keys: Optional[List[str]]
-    '''
-    keys: Optional[List[str]]
+    @property
+    def keys(self) -> Optional[List[str]]:
+        '''
+        The list of names of sub-option groups or options.
 
-    The list of names of sub-option groups or options.
-
-    The list is `None` if the current object is not an option group.
-
-    '''
+        The list is `None` if the current object is not an option group.
+        '''
+        ret = None
+        if self._type & _lib.clingo_configuration_type_map:
+            ret = []
+            p_size = _ffi.new('size_t*')
+            _handle_error(_lib.clingo_configuration_map_size(self._rep, self._key, p_size))
+            for i in range(p_size[0]):
+                p_str = _ffi.new('char**')
+                _handle_error(_lib.clingo_configuration_map_subkey_name(self._rep, self._key, i, p_str))
+                ret.append(_ffi.string(p_str[0]).decode())
+        return ret
 
 # {{{1 statistics [0%]
 
@@ -3459,12 +3529,18 @@ class Control:
                 return ret
         return handle
 
-    configuration: Configuration
-    '''
-    configuration: Configuration
-    `Configuration` object to change the configuration.
+    @property
+    def configuration(self) -> Configuration:
+        '''
+        `Configuration` object to change the configuration.
+        '''
+        p_conf = _ffi.new('clingo_configuration_t**')
+        _handle_error(_lib.clingo_control_configuration(self._rep, p_conf))
 
-    '''
+        p_key = _ffi.new('clingo_id_t*')
+        _handle_error(_lib.clingo_configuration_root(p_conf[0], p_key))
+        return Configuration(p_conf[0], p_key[0])
+
     enable_cleanup: bool
     '''
     enable_cleanup: bool
