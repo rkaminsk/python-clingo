@@ -87,6 +87,13 @@ def _clingo_version():
     _lib.clingo_version(p_major, p_minor, p_revision)
     return f"{p_major[0]}.{p_minor[0]}.{p_revision[0]}"
 
+def _str(f_size, f_str, *args):
+    p_size = _ffi.new('size_t*')
+    f_size(*args, p_size)
+    p_str = _ffi.new('char[]', p_size[0])
+    f_str(*args, p_str, p_size[0])
+    return _ffi.string(p_str).decode()
+
 def _handle_error(ret: bool, handler=None):
     if not ret:
         code = _lib.clingo_error_code()
@@ -214,11 +221,7 @@ class Symbol:
         self._rep = rep
 
     def __str__(self) -> str:
-        p_size = _ffi.new('size_t*')
-        _lib.clingo_symbol_to_string_size(self._rep, p_size)
-        p_str = _ffi.new('char[]', p_size[0])
-        _lib.clingo_symbol_to_string(self._rep, p_str, p_size[0])
-        return _ffi.string(p_str).decode()
+        return _str(_lib.clingo_symbol_to_string_size, _lib.clingo_symbol_to_string, self._rep)
 
     def __hash__(self) -> int:
         return _lib.clingo_symbol_hash(self._rep)
@@ -642,9 +645,9 @@ class SymbolicAtoms:
                   _lib.clingo_signature_arity(c_sig),
                   _lib.clingo_signature_is_positive(c_sig)) for c_sig in p_sigs ]
 
-# {{{1 theory atoms [0%]
+# {{{1 theory atoms [100%]
 
-class TheoryTermType(Hashable, Comparable, metaclass=ABCMeta):
+class TheoryTermType(Enum):
     '''
     Enumeration of the different types of theory terms.
 
@@ -671,14 +674,15 @@ class TheoryTermType(Hashable, Comparable, metaclass=ABCMeta):
     Set : TheoryTermType
         For set theory terms.
     '''
-    # Function: TheoryTermType
-    # List: TheoryTermType
-    # Number: TheoryTermType
-    # Set: TheoryTermType
-    # Symbol: TheoryTermType
-    # Tuple: TheoryTermType
+    Function = _lib.clingo_theory_term_type_function
+    List = _lib.clingo_theory_term_type_list
+    Number = _lib.clingo_theory_term_type_number
+    Set = _lib.clingo_theory_term_type_set
+    Symbol = _lib.clingo_theory_term_type_symbol
+    Tuple = _lib.clingo_theory_term_type_tuple
 
-class TheoryTerm(Hashable, Comparable, metaclass=ABCMeta):
+@total_ordering
+class TheoryTerm:
     '''
     `TheoryTerm` objects represent theory terms.
 
@@ -687,34 +691,63 @@ class TheoryTerm(Hashable, Comparable, metaclass=ABCMeta):
 
     Implements: `Hashable`, `Comparable`.
     '''
-    arguments: List['TheoryTerm']
-    '''
-    arguments: List[TheoryTerm]
+    def __init__(self, rep, idx):
+        self._rep = rep
+        self._idx = idx
 
-    The arguments of the term (for functions, tuples, list, and sets).
+    def __hash__(self):
+        return self._idx
 
-    '''
-    name: str
-    '''
-    name: str
+    def __eq__(self, other):
+        return self._idx == other._idx
 
-    The name of the term (for symbols and functions).
-    '''
-    number: int
-    '''
-    number: int
+    def __lt__(self, other):
+        return self._idx < other._idx
 
-    The numeric representation of the term (for numbers).
+    def __str__(self):
+        return _str(_lib.clingo_theory_atoms_term_to_string_size,
+                    _lib.clingo_theory_atoms_term_to_string,
+                    self._rep)
 
-    '''
-    type: TheoryTermType
-    '''
-    type: TheoryTermType
+    @property
+    def arguments(self) -> List['TheoryTerm']:
+        '''
+        The arguments of the term (for functions, tuples, list, and sets).
+        '''
+        p_size = _ffi.new('size_t*')
+        p_args = _ffi.new('clingo_id_t**')
+        _handle_error(_lib.clingo_theory_atoms_term_arguments(self._rep, self._idx, p_args, p_size))
+        return [TheoryTerm(self._rep, p_args[0][i]) for i in range(p_size[0])]
 
-    The type of the theory term.
-    '''
+    @property
+    def name(self) -> str:
+        '''
+        The name of the term (for symbols and functions).
+        '''
+        p_name = _ffi.new('char**')
+        _handle_error(_lib.clingo_theory_atoms_term_name(self._rep, self._idx, p_name))
+        return _ffi.string(p_name[0]).encode()
 
-class TheoryElement(Hashable, Comparable, metaclass=ABCMeta):
+    @property
+    def number(self) -> int:
+        '''
+        The numeric representation of the term (for numbers).
+        '''
+        p_num = _ffi.new('int*')
+        _handle_error(_lib.clingo_theory_atoms_term_number(self._rep, self._idx, p_num))
+        return p_num[0]
+
+    @property
+    def type(self) -> TheoryTermType:
+        '''
+        The type of the theory term.
+        '''
+        p_type = _ffi.new('clingo_theory_term_type_t*')
+        _handle_error(_lib.clingo_theory_atoms_term_type(self._rep, self._idx, p_type))
+        return TheoryTermType(p_type[0])
+
+@total_ordering
+class TheoryElement:
     '''
     Class to represent theory elements.
 
@@ -723,64 +756,126 @@ class TheoryElement(Hashable, Comparable, metaclass=ABCMeta):
 
     Implements: `Hashable`, `Comparable`.
     '''
-    condition: List[TheoryTerm]
-    '''
-    condition: List[TheoryTerm]
+    def __init__(self, rep, idx):
+        self._rep = rep
+        self._idx = idx
 
-    The condition of the element.
+    def __hash__(self):
+        return self._idx
 
-    '''
-    condition_id: int
-    '''
-    condition_id: int
+    def __eq__(self, other):
+        return self._idx == other._idx
 
-    Each condition has an id. This id can be passed to
-    `PropagateInit.solver_literal` to obtain a solver literal equivalent to the
-    condition.
+    def __lt__(self, other):
+        return self._idx < other._idx
 
-    '''
-    terms: List[TheoryTerm]
-    '''
-    terms: List[TheoryTerm]
+    def __str__(self):
+        return _str(_lib.clingo_theory_atoms_element_to_string_size,
+                    _lib.clingo_theory_atoms_element_to_string,
+                    self._rep)
 
-    The tuple of the element.
+    @property
+    def condition(self) -> List[TheoryTerm]:
+        '''
+        The condition of the element.
+        '''
+        p_size = _ffi.new('size_t*')
+        p_cond = _ffi.new('clingo_literal_t**')
+        _handle_error(_lib.clingo_theory_atoms_element_condition(self._rep, self._idx, p_cond, p_size))
+        return [p_cond[0][i] for i in range(p_size[0])]
 
-    '''
+    @property
+    def condition_id(self) -> int:
+        '''
+        Each condition has an id. This id can be passed to
+        `PropagateInit.solver_literal` to obtain a solver literal equivalent to
+        the condition.
+        '''
+        p_id = _ffi.new('int*')
+        _handle_error(_lib.clingo_theory_atoms_element_condition_id(self._rep, self._idx, p_id))
+        return p_id[0]
 
-class TheoryAtom(metaclass=ABCMeta):
+    @property
+    def terms(self) -> List[TheoryTerm]:
+        '''
+        The tuple of the element.
+        '''
+        p_size = _ffi.new('size_t*')
+        p_terms = _ffi.new('clingo_id_t**')
+        _handle_error(_lib.clingo_theory_atoms_element_tuple(self._rep, self._idx, p_terms, p_size))
+        return [TheoryTerm(self._rep, p_terms[0][i]) for i in range(p_size[0])]
+
+@total_ordering
+class TheoryAtom:
     '''
     Class to represent theory atoms.
 
     Theory atoms have a readable string representation, implement Python's rich
     comparison operators, and can be used as dictionary keys.
-    '''
-    elements: List[TheoryElement]
-    '''
-    elements: List[TheoryElement]
 
-    The elements of the atom.
+    Implements: `Hashable`, `Comparable`.
     '''
-    guard: Tuple[str, TheoryTerm]
-    '''
-    guard: Tuple[str, TheoryTerm]
+    def __init__(self, rep, idx):
+        self._rep = rep
+        self._idx = idx
 
-    The guard of the atom or None if the atom has no guard.
+    def __hash__(self):
+        return self._idx
 
-    '''
-    literal: int
-    '''
-    literal: int
+    def __eq__(self, other):
+        return self._idx == other._idx
 
-    The program literal associated with the atom.
+    def __lt__(self, other):
+        return self._idx < other._idx
 
-    '''
-    term: TheoryTerm
-    '''
-    term: TheoryTerm
+    def __str__(self):
+        return _str(_lib.clingo_theory_atoms_atom_to_string_size,
+                    _lib.clingo_theory_atoms_atom_to_string,
+                    self._rep)
 
-    The term of the atom.
+    @property
+    def elements(self) -> List[TheoryElement]:
+        '''
+        The elements of the atom.
+        '''
+        p_size = _ffi.new('size_t*')
+        p_elems = _ffi.new('clingo_id_t**')
+        _handle_error(_lib.clingo_theory_atoms_atom_elements(self._rep, self._idx, p_elems, p_size))
+        return [TheoryElement(self._rep, p_elems[0][i]) for i in range(p_size[0])]
 
-    '''
+    @property
+    def guard(self) -> Optional[Tuple[str, TheoryTerm]]:
+        '''
+        The guard of the atom or None if the atom has no guard.
+        '''
+        p_has_guard = _ffi.new('bool*')
+        _handle_error(_lib.clingo_theory_atoms_atom_has_guard(self._rep, self._idx, p_has_guard))
+        if not p_has_guard[0]:
+            return None
+
+        p_conn = _ffi.new('char**')
+        p_term = _ffi.new('clingo_id_t*')
+        _handle_error(_lib.clingo_theory_atoms_atom_guard(self._rep, self._idx, p_conn, p_term))
+
+        return (_ffi.string(p_conn[0]).encode(), TheoryTerm(self._rep, p_term[0]))
+
+    @property
+    def literal(self) -> int:
+        '''
+        The program literal associated with the atom.
+        '''
+        p_lit = _ffi.new('clingo_literal_t*')
+        _handle_error(_lib.clingo_theory_atoms_atom_literal(self._rep, self._idx, p_lit))
+        return p_lit[0]
+
+    @property
+    def term(self) -> TheoryTerm:
+        '''
+        The term of the atom.
+        '''
+        p_term = _ffi.new('clingo_id_t*')
+        _handle_error(_lib.clingo_theory_atoms_atom_term(self._rep, self._idx, p_term))
+        return TheoryTerm(self._rep, p_term[0])
 
 # {{{1 solving [100%]
 
@@ -1727,9 +1822,9 @@ class PropagateInit(metaclass=ABCMeta):
     '''
     The symbolic atoms captured by a `SymbolicAtoms` object.
     '''
-    theory_atoms: Iterable[TheoryAtom]
+    theory_atoms: Iterator[TheoryAtom]
     '''
-    A `TheoryAtomIter` object to iterate over all theory atoms.
+    An iterator over all theory atoms.
     '''
 
 class PropagateControl(metaclass=ABCMeta):
@@ -2687,6 +2782,8 @@ class Configuration(metaclass=ABCMeta):
 
     '''
 
+# {{{1 statistics [0%]
+
 class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',float]], metaclass=ABCMeta):
     '''
     Object to modify statistics stored in an array.
@@ -3384,6 +3481,10 @@ class Control:
     If the enumeration assumption is enabled, then all information learnt from
     clasp's various enumeration modes is removed after a solve call. This includes
     enumeration of cautious or brave consequences, enumeration of answer sets with
+
+        p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
+        p_valid = _ffi.new('bool*')
+        _handle_error(_lib.clingo_symbolic_atoms_begin(self._rep, p_sig, p_it))
     or without projection, or finding optimal models; as well as clauses added with
     `SolveControl.add_clause`.
 
@@ -3464,10 +3565,19 @@ class Control:
         _handle_error(_lib.clingo_control_symbolic_atoms(self._rep, p_ret))
         return SymbolicAtoms(p_ret[0])
 
-    theory_atoms: Iterable[TheoryAtom]
-    '''
-    A `TheoryAtomIter` object, which can be used to iterate over the theory atoms.
-    '''
+    @property
+    def theory_atoms(self) -> Iterator[TheoryAtom]:
+        '''
+        An iterator over the theory atoms.
+        '''
+        p_atoms = _ffi.new('clingo_theory_atoms_t**')
+        _handle_error(_lib.clingo_control_theory_atoms(self._rep, p_atoms))
+
+        p_size = _ffi.new('int*')
+        _handle_error(_lib.clingo_theory_atoms_size(self._rep, p_size))
+
+        for idx in range(p_size[0]):
+            yield TheoryAtom(self._rep, idx)
 
 # {{{1 application [0%]
 
