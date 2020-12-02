@@ -3003,7 +3003,7 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
             The values of the map.
         '''
 
-# {{{1 control [80%]
+# {{{1 control [90%]
 
 class _SolveEventHandler:
     # pylint: disable=missing-function-docstring
@@ -3330,8 +3330,6 @@ class Control:
 
     def load(self, path: str) -> None:
         '''
-        load(self, path: str) -> None
-
         Extend the logic program with a (non-ground) logic program in a file.
 
         Parameters
@@ -3343,11 +3341,10 @@ class Control:
         -------
         None
         '''
+        _handle_error(_lib.clingo_control_load(self._rep, path.encode()))
 
     def register_observer(self, observer: Observer, replace: bool=False) -> None:
         '''
-        register_observer(self, observer: Observer, replace: bool=False) -> None
-
         Registers the given observer to inspect the produced grounding.
 
         Parameters
@@ -3368,11 +3365,10 @@ class Control:
         Not all functions the `Observer` interface have to be implemented and can be
         omitted if not needed.
         '''
+        raise RuntimeError('implement me!!!')
 
     def register_propagator(self, propagator: Propagator) -> None:
         '''
-        register_propagator(self, propagator: Propagator) -> None
-
         Registers the given propagator with all solvers.
 
         Parameters
@@ -3399,11 +3395,10 @@ class Control:
         Not all functions of the `Propagator` interface have to be implemented and can
         be omitted if not needed.
         '''
+        raise RuntimeError('implement me!!!')
 
-    def release_external(self, symbol: Union[Symbol,int]) -> None:
+    def release_external(self, external: Union[Symbol,int]) -> None:
         '''
-        release_external(self, symbol: Union[Symbol,int]) -> None
-
         Release an external atom represented by the given symbol or program literal.
 
         This function causes the corresponding atom to become permanently false if
@@ -3412,7 +3407,7 @@ class Control:
 
         Parameters
         ----------
-        symbol : Union[Symbol,int]
+        external : Union[Symbol,int]
             The symbolic atom or program atom to release.
 
         Returns
@@ -3441,6 +3436,7 @@ class Control:
             Answer: a
             SAT
         '''
+        _handle_error(_lib.clingo_control_release_external(self._rep, self._program_atom(external)))
 
     def solve(self,
               assumptions: Sequence[Union[Tuple[Symbol,bool],int]]=[],
@@ -3601,92 +3597,100 @@ class Control:
         _handle_error(_lib.clingo_configuration_root(p_conf[0], p_key))
         return Configuration(p_conf[0], p_key[0])
 
-    enable_cleanup: bool
-    '''
-    enable_cleanup: bool
+    @property
+    def enable_cleanup(self) -> bool:
+        '''
+        Whether to enable automatic calls to `Control.cleanup`.
+        '''
+        return _lib.clingo_control_get_enable_cleanup(self._rep)
 
-    Whether to enable automatic calls to `Control.cleanup`.
+    @enable_cleanup.setter
+    def enable_cleanup(self, value: bool) -> None:
+        _handle_error(_lib.clingo_control_set_enable_cleanup(self._rep, value))
 
-    '''
-    enable_enumeration_assumption: bool
-    '''
-    enable_enumeration_assumption: bool
+    @property
+    def enable_enumeration_assumption(self) -> bool:
+        '''
+        Whether do discard or keep learnt information from enumeration modes.
 
-    Whether do discard or keep learnt information from enumeration modes.
+        If the enumeration assumption is enabled, then all information learnt from
+        clasp's various enumeration modes is removed after a solve call. This includes
+        enumeration of cautious or brave consequences, enumeration of answer sets with
+        or without projection, or finding optimal models; as well as clauses added with
+        `SolveControl.add_clause`.
 
-    If the enumeration assumption is enabled, then all information learnt from
-    clasp's various enumeration modes is removed after a solve call. This includes
-    enumeration of cautious or brave consequences, enumeration of answer sets with
-    or without projection, or finding optimal models; as well as clauses added with
-    `SolveControl.add_clause`.
+        Notes
+        -----
+        Initially the enumeration assumption is enabled.
 
-    Notes
-    -----
-    Initially the enumeration assumption is enabled.
+        In general, the enumeration assumption should be enabled whenever there are
+        multiple calls to solve. Otherwise, the behavior of the solver will be
+        unpredictable because there are no guarantees which information exactly is
+        kept. There might be small speed benefits when disabling the enumeration
+        assumption for single shot solving.
+        '''
+        return _lib.clingo_control_get_enable_enumeration_assumption(self._rep)
 
-    In general, the enumeration assumption should be enabled whenever there are
-    multiple calls to solve. Otherwise, the behavior of the solver will be
-    unpredictable because there are no guarantees which information exactly is
-    kept. There might be small speed benefits when disabling the enumeration
-    assumption for single shot solving.
+    @enable_enumeration_assumption.setter
+    def enable_enumeration_assumption(self, value: bool) -> None:
+        _handle_error(_lib.clingo_control_set_enable_enumeration_assumption(self._rep, value))
 
-    '''
-    is_conflicting: bool
-    '''
-    is_conflicting: bool
+    @property
+    def is_conflicting(self) -> bool:
+        '''
+        Whether the internal program representation is conflicting.
 
-    Whether the internal program representation is conflicting.
+        If this (read-only) property is true, solve calls return immediately with an
+        unsatisfiable solve result.
 
-    If this (read-only) property is true, solve calls return immediately with an
-    unsatisfiable solve result.
+        Notes
+        -----
+        Conflicts first have to be detected, e.g., initial unit propagation results in
+        an empty clause, or later if an empty clause is resolved during solving. Hence,
+        the property might be false even if the problem is unsatisfiable.
+        '''
+        return _lib.clingo_control_is_conflicting(self._rep)
 
-    Notes
-    -----
-    Conflicts first have to be detected, e.g., initial unit propagation results in
-    an empty clause, or later if an empty clause is resolved during solving. Hence,
-    the property might be false even if the problem is unsatisfiable.
+    @property
+    def statistics(self) -> dict:
+        '''
+        A `dict` containing solve statistics of the last solve call.
 
-    '''
-    statistics: dict
-    '''
-    statistics: dict
+        Notes
+        -----
+        The statistics correspond to the `--stats` output of clingo. The detail of the
+        statistics depends on what level is requested on the command line. Furthermore,
+        there are some functions like `Control.release_external` that start a new
+        solving step resetting the current step statistics. It is best to access the
+        statistics right after solving.
 
-    A `dict` containing solve statistics of the last solve call.
+        This property is only available in clingo.
 
-    Notes
-    -----
-    The statistics correspond to the `--stats` output of clingo. The detail of the
-    statistics depends on what level is requested on the command line. Furthermore,
-    there are some functions like `Control.release_external` that start a new
-    solving step resetting the current step statistics. It is best to access the
-    statistics right after solving.
+        Examples
+        --------
+        The following example shows how to dump the solving statistics in json format:
 
-    This property is only available in clingo.
-
-    Examples
-    --------
-    The following example shows how to dump the solving statistics in json format:
-
-        >>> import json
-        >>> import clingo
-        >>> ctl = clingo.Control()
-        >>> ctl.add("base", [], "{a}.")
-        >>> ctl.ground([("base", [])])
-        >>> ctl.solve()
-        SAT
-        >>> print(json.dumps(ctl.statistics['solving'], sort_keys=True, indent=4,
-        ... separators=(',', ': ')))
-        {
-            "solvers": {
-                "choices": 1.0,
-                "conflicts": 0.0,
-                "conflicts_analyzed": 0.0,
-                "restarts": 0.0,
-                "restarts_last": 0.0
+            >>> import json
+            >>> import clingo
+            >>> ctl = clingo.Control()
+            >>> ctl.add("base", [], "{a}.")
+            >>> ctl.ground([("base", [])])
+            >>> ctl.solve()
+            SAT
+            >>> print(json.dumps(ctl.statistics['solving'], sort_keys=True, indent=4,
+            ... separators=(',', ': ')))
+            {
+                "solvers": {
+                    "choices": 1.0,
+                    "conflicts": 0.0,
+                    "conflicts_analyzed": 0.0,
+                    "restarts": 0.0,
+                    "restarts_last": 0.0
+                }
             }
-        }
 
-    '''
+        '''
+        raise RuntimeError('implement me!!!')
 
     @property
     def symbolic_atoms(self) -> SymbolicAtoms:
