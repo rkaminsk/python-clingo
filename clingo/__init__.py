@@ -66,8 +66,8 @@ The second example shows how to use Python code from clingo.
 '''
 
 from typing import (
-    AbstractSet, Any, Callable, ContextManager, Hashable, Iterable, Iterator, List, Mapping, MutableSequence,
-    Optional, Sequence, Set, Tuple, Union, ValuesView)
+    AbstractSet, Any, Callable, ContextManager, Hashable, Iterable, Iterator, List, Mapping, MutableMapping,
+    MutableSequence, Optional, Sequence, Set, Tuple, Union, ValuesView, cast, overload)
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 from functools import total_ordering
@@ -2857,7 +2857,7 @@ class Configuration:
 
 # {{{1 statistics [0%]
 
-class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',float]], metaclass=ABCMeta):
+class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',float]]):
     '''
     Object to modify statistics stored in an array.
 
@@ -2931,13 +2931,13 @@ class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',fl
         '''
 
 
-class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]], metaclass=ABCMeta):
+class StatisticsMap(MutableMapping[str,Union['StatisticsArray','StatisticsMap',float]]):
     '''
     Object to capture statistics stored in a map.
 
     This class does not support item deletion.
 
-    Implements: `Mapping[str,Union[StatisticsArray,StatisticsMap,float]]`.
+    Implements: `MutableMapping[str,Union[StatisticsArray,StatisticsMap,float]]`.
 
     See Also
     --------
@@ -2950,8 +2950,6 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
     '''
     def items(self) -> AbstractSet[Tuple[str, Union['StatisticsArray','StatisticsMap',float]]]:
         '''
-        items(self) -> AbstractSet[Tuple[str, Union[StatisticsArray,StatisticsMap,float]]]
-
         Return the items of the map.
 
         Returns
@@ -2962,8 +2960,6 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
 
     def keys(self) -> AbstractSet[str]:
         '''
-        keys(self) -> AbstractSet[str]
-
         Return the keys of the map.
 
         Returns
@@ -2972,10 +2968,8 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
             The keys of the map.
         '''
 
-    def update(self, values: Mapping[str,Any]) -> None:
+    def update(self, values: Mapping[str,Union['StatisticsArray','StatisticsMap',float]]):
         '''
-        update(self, values: Mapping[str,Any]) -> None
-
         Update the map with the given values.
 
         Parameters
@@ -2993,8 +2987,6 @@ class StatisticsMap(Mapping[str,Union['StatisticsArray','StatisticsMap',float]],
 
     def values(self) -> ValuesView[Union['StatisticsArray','StatisticsMap',float]]:
         '''
-        values(self) -> ValuesView[Union[StatisticsArray,StatisticsMap,float]]
-
         Return the values of the map.
 
         Returns
@@ -3075,6 +3067,40 @@ def _clingo_ground_callback(location, name, arguments, arguments_size, data, sym
 
     return True
 
+def _statistics(stats, key):
+    '''
+    Transform clingo's statistics into python type.
+    '''
+    p_type = _ffi.new('clingo_statistics_type_t *')
+    _handle_error(_lib.clingo_statistics_type(stats, key, p_type))
+
+    if p_type[0] == _lib.clingo_statistics_type_value:
+        p_val = _ffi.new('double*')
+        _handle_error(_lib.clingo_statistics_value_get(stats, key, p_val))
+        return p_val[0]
+
+    if p_type[0] == _lib.clingo_statistics_type_array:
+        p_size = _ffi.new('size_t*')
+        _handle_error(_lib.clingo_statistics_array_size(stats, key, p_size))
+        ret = []
+        for i in range(p_size[0]):
+            p_key = _ffi.new('uint64_t*')
+            _handle_error(_lib.clingo_statistics_array_at(stats, key, i, p_key))
+            ret.append(_statistics(stats, p_key[0]))
+        return ret
+
+    assert p_type[0] == _lib.clingo_statistics_type_map
+    p_size = _ffi.new('size_t*')
+    _handle_error(_lib.clingo_statistics_map_size(stats, key, p_size))
+    ret = {}
+    for i in range(p_size[0]):
+        p_name = _ffi.new('char**')
+        p_key = _ffi.new('uint64_t*')
+        _handle_error(_lib.clingo_statistics_map_subkey_name(stats, key, i, p_name))
+        _handle_error(_lib.clingo_statistics_map_at(stats, key, p_name[0], p_key))
+        ret[_ffi.string(p_name[0]).decode()] = _statistics(stats, p_key[0])
+    return ret
+
 class Control:
     '''
     Control object for the grounding/solving process.
@@ -3112,6 +3138,8 @@ class Control:
         _handle_error(_lib.clingo_control_new(c_args, len(arguments), c_cb, c_handle, message_limit, p_ctl))
         self._rep = p_ctl[0]
         self._handler = None
+        self._statistics = None
+        self._statistics_call = -1.0
 
     def __del__(self):
         _lib.clingo_control_free(self._rep)
@@ -3690,7 +3718,27 @@ class Control:
             }
 
         '''
-        raise RuntimeError('implement me!!!')
+        p_stats = _ffi.new('clingo_statistics_t**')
+        _handle_error(_lib.clingo_control_statistics(self._rep, p_stats))
+
+        p_key = _ffi.new('uint64_t*')
+        _handle_error(_lib.clingo_statistics_root(p_stats[0], p_key))
+        key_root = p_key[0]
+
+        _handle_error(_lib.clingo_statistics_map_at(p_stats[0], key_root, "summary".encode(), p_key))
+        key_summary = p_key[0]
+        _handle_error(_lib.clingo_statistics_map_at(p_stats[0], key_summary, "call".encode(), p_key))
+        key_call = p_key[0]
+        p_call = _ffi.new('double*')
+        _handle_error(_lib.clingo_statistics_value_get(p_stats[0], key_call, p_call))
+        if self._statistics is not None and p_call[0] != self._statistics_call:
+            self._statistics = None
+
+        if self._statistics is None:
+            self._statistics_call = p_call[0]
+            self._statistics = _statistics(p_stats[0], key_root)
+
+        return cast(dict, self._statistics)
 
     @property
     def symbolic_atoms(self) -> SymbolicAtoms:

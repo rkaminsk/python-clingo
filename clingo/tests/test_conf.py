@@ -9,10 +9,6 @@ class TestConfig(TestCase):
     '''
     Tests for configuration and statistics.
     '''
-
-    def setUp(self):
-        self.ctl = Control()
-
     def test_config(self):
         '''
         Test configuration.
@@ -26,7 +22,14 @@ class TestConfig(TestCase):
         ctl.configuration.solver[0].heuristic = 'berkmin'
         self.assertTrue(ctl.configuration.solver[0].heuristic.startswith('berkmin'))
 
-    def test_stats(self):
+    def test_simple_stats(self):
         '''
-        Test statistics.
+        Test simple statistics.
         '''
+        ctl = Control(['-t', '2', '--stats=2'])
+        ctl.add('base', [], '1 { a; b }.')
+        ctl.ground([('base', [])])
+        ctl.solve()
+        stats = ctl.statistics
+        self.assertGreaterEqual(stats['problem']['lp']['atoms'], 2)
+        self.assertGreaterEqual(stats['solving']['solvers']['choices'], 1)
