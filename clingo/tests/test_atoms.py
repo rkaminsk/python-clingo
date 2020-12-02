@@ -3,7 +3,15 @@ Tests for theory and symbolic atoms.
 '''
 
 from unittest import TestCase
-from clingo import Control, Number, Function
+from clingo import Control, Function, Number, TheoryTermType
+
+THEORY = '''
+#theory test {
+    t { };
+    &a/0 : t, head;
+    &b/0 : t, {=}, t, head
+}.
+'''
 
 class TestAtoms(TestCase):
     '''
@@ -84,3 +92,80 @@ class TestAtoms(TestCase):
         self.assertIn(Function('q', [Number(2)], True), atoms)
         self.assertNotIn(Function('q', [Number(2)], False), atoms)
 
+    def test_theory_term(self):
+        '''
+        Test theory term.
+        '''
+        self.ctl.add('base', [], THEORY)
+        self.ctl.add('base', [], '&a { 1,a,f(a),{1},(1,),[1] }.')
+        self.ctl.ground([('base', [])])
+
+        terms = next(self.ctl.theory_atoms).elements[0].terms
+        self.assertEqual([str(term) for term in terms], ['1', 'a', 'f(a)', '{1}', '(1,)', '[1]'])
+        num, sym, fun, set_, tup, lst = terms
+        self.assertEqual(num.type, TheoryTermType.Number)
+        self.assertEqual(num.number, 1)
+        self.assertEqual(sym.type, TheoryTermType.Symbol)
+        self.assertEqual(sym.name, 'a')
+        self.assertEqual(fun.type, TheoryTermType.Function)
+        self.assertEqual(fun.name, 'f')
+        self.assertEqual(fun.arguments, [sym])
+        self.assertEqual(set_.type, TheoryTermType.Set)
+        self.assertEqual(set_.arguments, [num])
+        self.assertEqual(tup.type, TheoryTermType.Tuple)
+        self.assertEqual(tup.arguments, [num])
+        self.assertEqual(lst.type, TheoryTermType.List)
+        self.assertEqual(lst.arguments, [num])
+
+        self.assertNotEqual(hash(num), hash(sym))
+        self.assertEqual(hash(num), hash(lst.arguments[0]))
+        self.assertNotEqual(num < sym, sym < num)
+
+    def test_theory_element(self):
+        '''
+        Test theory element.
+        '''
+        self.ctl.add('base', [], THEORY)
+        self.ctl.add('base', [], '{a; b}.')
+        self.ctl.add('base', [], '&a { 1; 2,3: a,b }.')
+        self.ctl.ground([('base', [])])
+
+        atom = next(self.ctl.theory_atoms)
+        elements = sorted(atom.elements, key=lambda elem: len(elem.terms))
+        self.assertEqual([str(elem) for elem in elements], ['1', '2,3: a,b'])
+
+        a, b = elements
+        self.assertEqual(len(a.condition), 0)
+        self.assertEqual(len(b.condition), 2)
+        self.assertTrue(all(lit >= 1 for lit in b.condition))
+        self.assertGreaterEqual(b.condition_id, 1)
+
+        self.assertEqual(a, a)
+        self.assertNotEqual(a, b)
+        self.assertNotEqual(hash(a), hash(b))
+        self.assertNotEqual(a < b, b < a)
+
+    def test_theory_atom(self):
+        '''
+        Test theory atom.
+        '''
+        self.ctl.add('base', [], THEORY)
+        self.ctl.add('base', [], '&a {}.')
+        self.ctl.add('base', [], '&b {} = 1.')
+        self.ctl.ground([('base', [])])
+
+        atoms = sorted(list(self.ctl.theory_atoms), key=lambda atom: atom.term.name)
+        self.assertEqual([str(atom) for atom in atoms], ['&a{}', '&b{}=1'])
+
+        a, b = atoms
+        self.assertTrue(a.literal >= 1)
+        self.assertIsNone(a.guard)
+        self.assertIsNotNone(b.guard)
+        self.assertEqual(b.guard[0], "=")
+        self.assertEqual(str(b.guard[1]), "1")
+        self.assertEqual(len(a.elements), 0)
+
+        self.assertEqual(a, a)
+        self.assertNotEqual(a, b)
+        self.assertNotEqual(hash(a), hash(b))
+        self.assertNotEqual(a < b, b < a)

@@ -707,7 +707,7 @@ class TheoryTerm:
     def __str__(self):
         return _str(_lib.clingo_theory_atoms_term_to_string_size,
                     _lib.clingo_theory_atoms_term_to_string,
-                    self._rep)
+                    self._rep, self._idx)
 
     @property
     def arguments(self) -> List['TheoryTerm']:
@@ -726,7 +726,7 @@ class TheoryTerm:
         '''
         p_name = _ffi.new('char**')
         _handle_error(_lib.clingo_theory_atoms_term_name(self._rep, self._idx, p_name))
-        return _ffi.string(p_name[0]).encode()
+        return _ffi.string(p_name[0]).decode()
 
     @property
     def number(self) -> int:
@@ -772,10 +772,10 @@ class TheoryElement:
     def __str__(self):
         return _str(_lib.clingo_theory_atoms_element_to_string_size,
                     _lib.clingo_theory_atoms_element_to_string,
-                    self._rep)
+                    self._rep, self._idx)
 
     @property
-    def condition(self) -> List[TheoryTerm]:
+    def condition(self) -> List[int]:
         '''
         The condition of the element.
         '''
@@ -791,7 +791,7 @@ class TheoryElement:
         `PropagateInit.solver_literal` to obtain a solver literal equivalent to
         the condition.
         '''
-        p_id = _ffi.new('int*')
+        p_id = _ffi.new('clingo_literal_t*')
         _handle_error(_lib.clingo_theory_atoms_element_condition_id(self._rep, self._idx, p_id))
         return p_id[0]
 
@@ -831,7 +831,7 @@ class TheoryAtom:
     def __str__(self):
         return _str(_lib.clingo_theory_atoms_atom_to_string_size,
                     _lib.clingo_theory_atoms_atom_to_string,
-                    self._rep)
+                    self._rep, self._idx)
 
     @property
     def elements(self) -> List[TheoryElement]:
@@ -857,7 +857,7 @@ class TheoryAtom:
         p_term = _ffi.new('clingo_id_t*')
         _handle_error(_lib.clingo_theory_atoms_atom_guard(self._rep, self._idx, p_conn, p_term))
 
-        return (_ffi.string(p_conn[0]).encode(), TheoryTerm(self._rep, p_term[0]))
+        return (_ffi.string(p_conn[0]).decode(), TheoryTerm(self._rep, p_term[0]))
 
     @property
     def literal(self) -> int:
@@ -3573,11 +3573,11 @@ class Control:
         p_atoms = _ffi.new('clingo_theory_atoms_t**')
         _handle_error(_lib.clingo_control_theory_atoms(self._rep, p_atoms))
 
-        p_size = _ffi.new('int*')
-        _handle_error(_lib.clingo_theory_atoms_size(self._rep, p_size))
+        p_size = _ffi.new('size_t*')
+        _handle_error(_lib.clingo_theory_atoms_size(p_atoms[0], p_size))
 
         for idx in range(p_size[0]):
-            yield TheoryAtom(self._rep, idx)
+            yield TheoryAtom(p_atoms[0], idx)
 
 # {{{1 application [0%]
 
