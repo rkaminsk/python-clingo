@@ -64,19 +64,22 @@ The second example shows how to use Python code from clingo.
     p(@id(10)).
     q(@seq(1,2)).
 '''
+# pylint: disable=too-many-lines
 
 from typing import (
-    AbstractSet, Any, Callable, ContextManager, Hashable, Iterable, Iterator, List, Mapping, MutableMapping,
-    MutableSequence, Optional, Sequence, Set, Tuple, Union, ValuesView, cast, overload)
+    AbstractSet, Any, Callable, Collection, ContextManager, Generic, Hashable, Iterable, Iterator, KeysView, List,
+    Mapping, MutableMapping, MutableSequence, Optional, Sequence, Set, Tuple, TypeVar, Union, ValuesView,
+    cast)
+from numbers import Real
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 from functools import total_ordering
 from os import _exit
 from traceback import print_exception
+from collections import abc
 import sys
 
 from _clingo import ffi as _ffi, lib as _lib # type: ignore # pylint: disable=no-name-in-module
-from .types import Comparable, Lookup
 
 # {{{1 auxiliary functions
 
@@ -93,6 +96,18 @@ def _str(f_size, f_str, *args):
     p_str = _ffi.new('char[]', p_size[0])
     f_str(*args, p_str, p_size[0])
     return _ffi.string(p_str).decode()
+
+def _c_call(c_type, c_fun, *args):
+    '''
+    Helper to simplify calling C functions where the last parameter is a
+    reference to the return value.
+    '''
+    p_ret = _ffi.new(f'{c_type}*')
+    _handle_error(c_fun(*args, p_ret))
+    return p_ret[0]
+
+def _to_str(c_str) -> str:
+    return _ffi.string(c_str).decode()
 
 def _handle_error(ret: bool, handler=None):
     if not ret:
@@ -119,6 +134,16 @@ def _cb_error_panic(exception, exc_value, traceback):
     print_exception(exception, exc_value, traceback)
     sys.stderr.write('PANIC: exception in nothrow scope')
     _exit(1)
+
+Key = TypeVar('Key')
+Value = TypeVar('Value')
+class Lookup(Generic[Key, Value], Collection[Value]):
+    '''
+    A collection of values with additional lookup by key.
+    '''
+    @abstractmethod
+    def __getitem__(self, key: Key) -> Optional[Value]:
+        pass
 
 # {{{1 basics [100%]
 
@@ -535,7 +560,7 @@ class SymbolicAtom:
         _handle_error(_lib.clingo_symbolic_atoms_symbol(self._rep, self._it, p_ret))
         return Symbol(p_ret[0])
 
-class SymbolicAtoms:
+class SymbolicAtoms(Lookup[Symbol,SymbolicAtom]):
     '''
     This class provides read-only access to the atom base of the grounder.
 
@@ -583,7 +608,9 @@ class SymbolicAtoms:
     def __iter__(self) -> Iterator[SymbolicAtom]:
         yield from self._iter(_ffi.NULL)
 
-    def __contains__(self, symbol: Symbol) -> bool:
+    def __contains__(self, symbol) -> bool:
+        if not isinstance(symbol, Symbol):
+            return False
         p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
         _handle_error(_lib.clingo_symbolic_atoms_find(self._rep, symbol._rep, p_it))
 
@@ -651,14 +678,6 @@ class TheoryTermType(Enum):
     '''
     Enumeration of the different types of theory terms.
 
-    `TheoryTermType` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed objects are available:
-
-    Implements: `Hashable`, `Comparable`.
-
     Attributes
     ----------
     Function : TheoryTermType
@@ -688,8 +707,6 @@ class TheoryTerm:
 
     Theory terms have a readable string representation, implement Python's rich
     comparison operators, and can be used as dictionary keys.
-
-    Implements: `Hashable`, `Comparable`.
     '''
     def __init__(self, rep, idx):
         self._rep = rep
@@ -753,8 +770,6 @@ class TheoryElement:
 
     Theory elements have a readable string representation, implement Python's rich
     comparison operators, and can be used as dictionary keys.
-
-    Implements: `Hashable`, `Comparable`.
     '''
     def __init__(self, rep, idx):
         self._rep = rep
@@ -812,8 +827,6 @@ class TheoryAtom:
 
     Theory atoms have a readable string representation, implement Python's rich
     comparison operators, and can be used as dictionary keys.
-
-    Implements: `Hashable`, `Comparable`.
     '''
     def __init__(self, rep, idx):
         self._rep = rep
@@ -1724,18 +1737,17 @@ class PropagateInit(metaclass=ABCMeta):
         None
         '''
 
-    def add_weight_constraint(self, literal: int, literals: Iterable[Tuple[int,int]], bound: int, type: int=0, compare_equal: bool=False) -> bool:
+    def add_weight_constraint(self, literal: int, literals: Iterable[Tuple[int,int]],
+                              bound: int, type_: int=0, compare_equal: bool=False) -> bool:
         '''
-        add_weight_constraint(self, literal: int, literals: Iterable[Tuple[int,int]], bound: int, type: int=0, compare_equal: bool=False) -> bool
-
         Statically adds a constraint of form
 
             literal <=> { l=w | (l, w) in literals } >= bound
 
         to the solver.
 
-        - If `type < 0`, then `<=>` is a left implication.
-        - If `type > 0`, then `<=>` is a right implication.
+        - If `type_ < 0`, then `<=>` is a left implication.
+        - If `type_ > 0`, then `<=>` is a right implication.
         - Otherwise, `<=>` is an equivalence.
 
         Parameters
@@ -1746,8 +1758,8 @@ class PropagateInit(metaclass=ABCMeta):
             The weighted literals of the constrain.
         bound : int
             The bound of the constraint.
-        type : int
-            Add a weight constraint of the given type.
+        type_ : int
+            Add a weight constraint of the given type_.
         compare_equal : bool=False
             A Boolean indicating whether to compare equal or less than equal.
 
@@ -1829,8 +1841,6 @@ class PropagateControl(metaclass=ABCMeta):
     '''
     def add_clause(self, clause: Iterable[int], tag: bool=False, lock: bool=False) -> bool:
         '''
-        add_clause(self, clause: Iterable[int], tag: bool=False, lock: bool=False) -> bool
-
         Add the given clause to the solver.
 
         Parameters
@@ -1850,8 +1860,6 @@ class PropagateControl(metaclass=ABCMeta):
 
     def add_literal(self) -> int:
         '''
-        add_literal(self) -> int
-
         Adds a new positive volatile literal to the underlying solver thread.
 
         The literal is only valid within the current solving step and solver thread.
@@ -1866,14 +1874,11 @@ class PropagateControl(metaclass=ABCMeta):
 
     def add_nogood(self, clause: Iterable[int], tag: bool=False, lock: bool=False) -> bool:
         '''
-        add_nogood(self, clause: Iterable[int], tag: bool=False, lock: bool=False) -> bool
-
         Equivalent to `self.add_clause([-lit for lit in clause], tag, lock)`.
         '''
 
     def add_watch(self, literal: int) -> None:
         '''
-        add_watch(self, literal: int) -> None
         Add a watch for the solver literal in the given phase.
 
         Parameters
@@ -1893,7 +1898,6 @@ class PropagateControl(metaclass=ABCMeta):
 
     def has_watch(self, literal: int) -> bool:
         '''
-        has_watch(self, literal: int) -> bool
         Check whether a literal is watched in the current solver thread.
 
         Parameters
@@ -1909,8 +1913,6 @@ class PropagateControl(metaclass=ABCMeta):
 
     def propagate(self) -> bool:
         '''
-        propagate(self) -> bool
-
         Propagate literals implied by added clauses.
 
         Returns
@@ -1921,7 +1923,6 @@ class PropagateControl(metaclass=ABCMeta):
 
     def remove_watch(self, literal: int) -> None:
         '''
-        remove_watch(self, literal: int) -> None
         Removes the watch (if any) for the given solver literal.
 
         Parameters
@@ -1936,20 +1937,17 @@ class PropagateControl(metaclass=ABCMeta):
 
     assignment: Assignment
     '''
-    assignment: Assignment
-
     `Assignment` object capturing the partial assignment of the current solver thread.
-
     '''
     thread_id: int
     '''
-    thread_id: int
-
     The numeric id of the current solver thread.
-
     '''
 
 class Propagator(metaclass=ABCMeta):
+    '''
+    Propagator interface for custom constraints.
+    '''
     def init(self, init: PropagateInit) -> None:
         """
         This function is called once before each solving step.
@@ -2089,7 +2087,7 @@ class Propagator(metaclass=ABCMeta):
 
 # {{{1 ground program inspection/building [0%]
 
-class HeuristicType(Hashable, Comparable, metaclass=ABCMeta):
+class HeuristicType(Enum):
     '''
     Enumeration of the different heuristic types.
 
@@ -2098,8 +2096,6 @@ class HeuristicType(Hashable, Comparable, metaclass=ABCMeta):
 
     Furthermore, they cannot be constructed from Python. Instead the following
     preconstructed class attributes  are available:
-
-    Implements: `Hashable`, `Comparable`.
 
     Attributes
     ----------
@@ -2310,7 +2306,7 @@ class Observer(metaclass=ABCMeta):
         None
         """
 
-    def heuristic(self, atom: int, type: HeuristicType, bias: int,
+    def heuristic(self, atom: int, type_: HeuristicType, bias: int,
                   priority: int, condition: Sequence[int]) -> None:
         """
         Observe heuristic directives passed to the solver.
@@ -2319,7 +2315,7 @@ class Observer(metaclass=ABCMeta):
         ----------
         atom : int
             The program atom heuristically modified.
-        type : HeuristicType
+        type_ : HeuristicType
             The type of the modification.
         bias : int
             A signed integer.
@@ -2521,8 +2517,6 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
 
     def add_acyc_edge(self, node_u: int, node_v: int, condition: Iterable[int]) -> None:
         '''
-        add_acyc_edge(self, node_u: int, node_v: int, condition: Iterable[int]) -> None
-
         Add an edge directive to the program.
 
         Parameters
@@ -2541,8 +2535,6 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
 
     def add_assume(self, literals: Iterable[int]) -> None:
         '''
-        add_assume(self, literals: Iterable[int]) -> None
-
         Add assumptions to the program.
 
         Parameters
@@ -2557,8 +2549,6 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
 
     def add_atom(self, symbol : Optional[Symbol]=None) -> int:
         '''
-        add_atom(self, symbol : Optional[Symbol]=None) -> int
-
         Return a fresh program atom or the atom associated with the given symbol.
 
         If the given symbol does not exist in the atom base, it is added first. Such
@@ -2577,8 +2567,6 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
 
     def add_external(self, atom : int, value : TruthValue=TruthValue.False_) -> None:
         '''
-        add_external(self, atom : int, value : TruthValue=TruthValue.False_) -> None
-
         Mark a program atom as external optionally fixing its truth value.
 
         Parameters
@@ -2597,17 +2585,16 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
         Can also be used to release an external atom using `TruthValue.Release`.
         '''
 
-    def add_heuristic(self, atom: int, type: HeuristicType, bias: int, priority: int, condition: Iterable[int]) -> None:
+    def add_heuristic(self, atom: int, type_: HeuristicType, bias: int, priority: int,
+                      condition: Iterable[int]) -> None:
         '''
-        add_heuristic(self, atom: int, type: HeuristicType, bias: int, priority: int, condition: Iterable[int]) -> None
-
         Add a heuristic directive to the program.
 
         Parameters
         ----------
         atom : int
             Program atom to heuristically modify.
-        type : HeuristicType
+        type_ : HeuristicType
             The type of modification.
         bias : int
             A signed integer.
@@ -2623,8 +2610,6 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
 
     def add_minimize(self, priority: int, literals: Iterable[Tuple[int,int]]) -> None:
         '''
-        add_minimize(self, priority: int, literals: Iterable[Tuple[int,int]]) -> None
-
         Add a minimize constraint to the program.
 
         Parameters
@@ -2641,8 +2626,6 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
 
     def add_project(self, atoms: Iterable[int]) -> None:
         '''
-        add_project(self, atoms: Iterable[int]) -> None
-
         Add a project statement to the program.
 
         Parameters
@@ -2657,8 +2640,6 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
 
     def add_rule(self, head: Iterable[int], body: Iterable[int]=[], choice: bool=False) -> None:
         '''
-        add_rule(self, head: Iterable[int], body: Iterable[int]=[], choice: bool=False) -> None
-
         Add a disjuntive or choice rule to the program.
 
         Parameters
@@ -2679,11 +2660,12 @@ class Backend(ContextManager['Backend'], metaclass=ABCMeta):
         Integrity constraints and normal rules can be added by using an empty or
         singleton head list, respectively.
         '''
+        # pylint: disable=dangerous-default-value,unnecessary-pass
+        pass
 
-    def add_weight_rule(self, head: Iterable[int], lower: int, body: Iterable[Tuple[int,int]], choice: bool=False) -> None:
+    def add_weight_rule(self, head: Iterable[int], lower: int, body: Iterable[Tuple[int,int]],
+                        choice: bool=False) -> None:
         '''
-        add_weight_rule(self, head: Iterable[int], lower: int, body: Iterable[Tuple[int,int]], choice: bool=False) -> None
-
         Add a disjuntive or choice rule with one weight constraint with a lower bound
         in the body to the program.
 
@@ -2855,9 +2837,55 @@ class Configuration:
                 ret.append(_ffi.string(p_str[0]).decode())
         return ret
 
-# {{{1 statistics [0%]
+# {{{1 statistics [100%]
 
-class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',float]]):
+StatisticsValue = Union['StatisticsArray', 'StatisticsMap', float]
+
+def _mutable_statistics_value_type(value):
+    if isinstance(value, str):
+        raise TypeError('unexpected string')
+    if isinstance(value, abc.Sequence):
+        return _lib.clingo_statistics_type_array
+    if isinstance(value, abc.Mapping):
+        return _lib.clingo_statistics_type_map
+    return _lib.clingo_statistics_type_value
+
+def _mutable_statistics_type(stats, key):
+    return _c_call('clingo_statistics_type_t', _lib.clingo_statistics_type, stats, key)
+
+def _mutable_statistics(stats) -> 'StatisticsMap':
+    key = _c_call('uint64_t', _lib.clingo_statistics_root, stats)
+    return cast(StatisticsMap, _mutable_statistics_get(stats, key))
+
+def _mutable_statistics_get(stats, key) -> StatisticsValue:
+    type_ = _mutable_statistics_type(stats, key)
+
+    if type_ == _lib.clingo_statistics_type_array:
+        return StatisticsArray(stats, key)
+
+    if type_ == _lib.clingo_statistics_type_map:
+        return StatisticsMap(stats, key)
+
+    assert type_ == _lib.clingo_statistics_type_value
+    return _c_call('double', _lib.clingo_statistics_value_get, stats, key)
+
+def _mutable_statistics_set(stats, key, type_, value, update):
+    if type_ == _lib.clingo_statistics_type_map:
+        StatisticsMap(stats, key).update(value)
+    elif type_ == _lib.clingo_statistics_type_array:
+        StatisticsArray(stats, key).update(value)
+    else:
+        assert type_ == _lib.clingo_statistics_type_value
+        if callable(value):
+            if update:
+                uval = value(_c_call('double', _lib.clingo_statistics_value_get, stats, key))
+            else:
+                uval = value(None)
+        else:
+            uval = value
+        _handle_error(_lib.clingo_statistics_value_set(stats, key, uval))
+
+class StatisticsArray(MutableSequence[StatisticsValue]):
     '''
     Object to modify statistics stored in an array.
 
@@ -2874,10 +2902,38 @@ class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',fl
     The `StatisticsArray.update` function provides convenient means to initialize
     and modify a statistics array.
     '''
+    def __init__(self, rep, key):
+        self._rep = rep
+        self._key = key
+
+    def __len__(self):
+        return _c_call('size_T', _lib.clingo_statistics_array_size, self._rep, self._key)
+
+    def __getitem__(self, index):
+        key = _c_call('uint64_t', _lib.clingo_statistics_array_at, self._rep, self._key, index)
+        return _mutable_statistics_get(self._rep, key)
+
+    def __setitem__(self, index, value):
+        key = _c_call('uint64_t', _lib.clingo_statistics_array_at, self._rep, self._key, index)
+        type_ = _mutable_statistics_type(self._rep, key)
+        _mutable_statistics_set(self._rep, key, type_, value, True)
+
+    def insert(self, index, value):
+        '''
+        This method is not supported.
+        '''
+        raise NotImplementedError('insertion is not supported')
+
+    def __delitem__(self, index):
+        raise NotImplementedError('deletion is not supported')
+
+    def __iadd__(self, other):
+        for x in other:
+            self.append(x)
+        return self
+
     def append(self, value: Any) -> None:
         '''
-        append(self, value: Any) -> None
-
         Append a value.
 
         Parameters
@@ -2889,11 +2945,12 @@ class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',fl
         -------
         None
         '''
+        type_ = _mutable_statistics_value_type(value)
+        key = _c_call('uint64_t', _lib.clingo_statistics_array_push, self._rep, self._key, type_)
+        _mutable_statistics_set(self._rep, key, type_, value, False)
 
     def extend(self, values: Iterable[Any]) -> None:
         '''
-        extend(self, values: Iterable[Any]) -> None
-
         Extend the statistics array with the given values.
 
         Paremeters
@@ -2910,11 +2967,10 @@ class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',fl
         -----
         append
         '''
+        self += values
 
     def update(self, values: Sequence[Any]) -> None:
         '''
-        update(self, values: Sequence[Any]) -> None
-
         Update a statistics array.
 
         Parameters
@@ -2929,9 +2985,14 @@ class StatisticsArray(MutableSequence[Union['StatisticsArray','StatisticsMap',fl
         -------
         None
         '''
+        n = len(self)
+        for idx, val in enumerate(values):
+            if idx < n:
+                self[idx] = val
+            else:
+                self.append(val)
 
-
-class StatisticsMap(MutableMapping[str,Union['StatisticsArray','StatisticsMap',float]]):
+class StatisticsMap(MutableMapping[str, StatisticsValue]):
     '''
     Object to capture statistics stored in a map.
 
@@ -2948,27 +3009,72 @@ class StatisticsMap(MutableMapping[str,Union['StatisticsArray','StatisticsMap',f
     The `StatisticsMap.update` function provides convenient means to initialize
     and modify a statistics map.
     '''
-    def items(self) -> AbstractSet[Tuple[str, Union['StatisticsArray','StatisticsMap',float]]]:
+    def __init__(self, rep, key):
+        self._rep = rep
+        self._key = key
+
+    def __len__(self):
+        return _c_call('size_t', _lib.clingo_statistics_map_size, self._rep, self._key)
+
+    def __getitem__(self, name: str):
+        key = _c_call('uint64_t', _lib.clingo_statistics_map_at, self._rep, self._key, name.encode())
+        return _mutable_statistics_get(self._rep, key)
+
+    def __setitem__(self, name: str, value: Any):
+        has_key = name in self
+        if has_key:
+            key = _c_call('uint64_t', _lib.clingo_statistics_map_at, self._rep, self._key, name.encode())
+            type_ = _mutable_statistics_type(self._rep, key)
+        else:
+            type_ = _mutable_statistics_value_type(value)
+            key = _c_call('uint64_t', _lib.clingo_statistics_map_add_subkey, self._rep, self._key, name.encode(), type_)
+        _mutable_statistics_set(self._rep, key, type_, value, has_key)
+
+    def __delitem__(self, index):
+        raise NotImplementedError('deletion is not supported')
+
+    def __contains__(self, name):
+        # note: has to be done like this because of python's container model
+        if not isinstance(name, str):
+            return False
+        return _c_call('bool', _lib.clingo_statistics_map_has_subkey, self._rep, self._key, name.encode())
+
+    def __iter__(self):
+        return iter(self.keys())
+
+    def items(self) -> AbstractSet[Tuple[str, StatisticsValue]]:
         '''
         Return the items of the map.
 
         Returns
         -------
-        AbstractSet[Tuple[str, Union[StatisticsArray,StatisticsMap,float]]]
+        AbstractSet[Tuple[str,StatisticsValue]]
             The items of the map.
         '''
+        ret = []
+        for i in range(len(self)):
+            name = _c_call('char*', _lib.clingo_statistics_map_subkey_name, self._rep, self._key, i)
+            key = _c_call('uint64_t', _lib.clingo_statistics_map_at, self._rep, self._key, name)
+            ret.append((_to_str(name), _mutable_statistics_get(self._rep, key)))
+        # Note: to shut up the type checker; this should work fine in practice
+        return cast(AbstractSet[Tuple[str, StatisticsValue]], ret)
 
-    def keys(self) -> AbstractSet[str]:
+    def keys(self) -> KeysView[str]:
         '''
         Return the keys of the map.
 
         Returns
         -------
-        AbstractSet[str]
+        KeysView[str]
             The keys of the map.
         '''
+        ret = []
+        for i in range(len(self)):
+            ret.append(_to_str(_c_call('char*', _lib.clingo_statistics_map_subkey_name, self._rep, self._key, i)))
+        # Note: to shut up the type checker; this should work fine in practice
+        return cast(KeysView[str], ret)
 
-    def update(self, values: Mapping[str,Union['StatisticsArray','StatisticsMap',float]]):
+    def update(self, values):
         '''
         Update the map with the given values.
 
@@ -2984,8 +3090,10 @@ class StatisticsMap(MutableMapping[str,Union['StatisticsArray','StatisticsMap',f
         -------
         None
         '''
+        for key, value in values.items():
+            self[key] = value
 
-    def values(self) -> ValuesView[Union['StatisticsArray','StatisticsMap',float]]:
+    def values(self) -> ValuesView[StatisticsValue]:
         '''
         Return the values of the map.
 
@@ -2994,6 +3102,13 @@ class StatisticsMap(MutableMapping[str,Union['StatisticsArray','StatisticsMap',f
         ValuesView[Union[StatisticsArray,StatisticsMap,float]]
             The values of the map.
         '''
+        ret = []
+        for i in range(len(self)):
+            name = _c_call('char*', _lib.clingo_statistics_map_subkey_name, self._rep, self._key, i)
+            key = _c_call('uint64_t', _lib.clingo_statistics_map_at, self._rep, self._key, name)
+            ret.append(_mutable_statistics_get(self._rep, key))
+        # Note: to shut up the type checker; this should work fine in practice
+        return cast(ValuesView[StatisticsValue], ret)
 
 # {{{1 control [90%]
 
@@ -3007,17 +3122,17 @@ class _SolveEventHandler:
 
     def on_model(self, m):
         ret = None
-        if self._on_model:
+        if self._on_model is not None:
             ret = self._on_model(Model(m))
         return bool(ret or ret is None)
 
     def on_finish(self, res):
-        if self._on_finish:
+        if self._on_finish is not None:
             self._on_finish(SolveResult(res))
 
     def on_statistics(self, step, accu):
-        if self._on_statistics:
-            raise RuntimeError('implement me!!!')
+        if self._on_statistics is not None:
+            self.on_statistics(_mutable_statistics(step), _mutable_statistics(accu))
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_solve_event_callback(type_, event, data, goon):
@@ -3767,8 +3882,6 @@ class Control:
 
 class Flag:
     '''
-    Flag(value: bool=False) -> Flag
-
     Helper object to parse command-line flags.
 
     Parameters
@@ -3778,22 +3891,19 @@ class Flag:
     '''
     def __init__(self, value: bool=False):
         pass
+
     flag: bool
     '''
-    flag: bool
-
     The value of the flag.
-
     '''
 
 class ApplicationOptions(metaclass=ABCMeta):
     '''
     Object to add custom options to a clingo based application.
     '''
-    def add(self, group: str, option: str, description: str, parser: Callable[[str], bool], multi: bool=False, argument: str=None) -> None:
+    def add(self, group: str, option: str, description: str, parser: Callable[[str], bool],
+            multi: bool=False, argument: str=None) -> None:
         '''
-        add(self, group: str, option: str, description: str, parser: Callable[[str], bool], multi: bool=False, argument: str=None) -> None
-
         Add an option that is processed with a custom parser.
 
         Parameters
@@ -4000,3 +4110,5 @@ def clingo_main(application: Application, files: Iterable[str]=[]) -> int:
 
         clingo.clingo_main(Application(sys.argv[0]), sys.argv[1:])
     '''
+    # pylint: disable=dangerous-default-value,unused-argument,unnecessary-pass
+    pass
