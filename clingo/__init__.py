@@ -102,9 +102,22 @@ def _c_call(c_type, c_fun, *args):
     Helper to simplify calling C functions where the last parameter is a
     reference to the return value.
     '''
-    p_ret = _ffi.new(f'{c_type}*')
+    if isinstance(c_type, str):
+        p_ret = _ffi.new(f'{c_type}*')
+    else:
+        p_ret = c_type
     _handle_error(c_fun(*args, p_ret))
     return p_ret[0]
+
+def _c_call2(c_type1, c_type2, c_fun, *args):
+    '''
+    Helper to simplify calling C functions where the last two parameters are a
+    reference to the return value.
+    '''
+    p_ret1 = _ffi.new(f'{c_type1}*')
+    p_ret2 = _ffi.new(f'{c_type2}*')
+    _handle_error(c_fun(*args, p_ret1, p_ret2))
+    return p_ret1[0], p_ret2[0]
 
 def _to_str(c_str) -> str:
     return _ffi.string(c_str).decode()
@@ -292,10 +305,9 @@ class Symbol:
         The arguments of a function.
         '''
         p_args = _ffi.new('clingo_symbol_t**')
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_symbol_arguments(self._rep, p_args, p_size))
+        size = _c_call('size_t', _lib.clingo_symbol_arguments, self._rep, p_args)
         ret = []
-        for i in range(p_size[0]):
+        for i in range(size):
             ret.append(Symbol(p_args[0][i]))
         return ret
 
@@ -304,45 +316,35 @@ class Symbol:
         '''
         The name of a function.
         '''
-        p_name = _ffi.new('char**')
-        _handle_error(_lib.clingo_symbol_name(self._rep, p_name))
-        return _ffi.string(p_name[0]).decode()
+        return _to_str(_c_call('char*', _lib.clingo_symbol_name, self._rep))
 
     @property
     def negative(self) -> bool:
         '''
         The inverted sign of a function.
         '''
-        p_negative = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbol_is_negative(self._rep, p_negative))
-        return p_negative[0]
+        return _c_call('bool', _lib.clingo_symbol_is_negative, self._rep)
 
     @property
     def number(self) -> int:
         '''
         The value of a number.
         '''
-        p_num = _ffi.new('int*')
-        _handle_error(_lib.clingo_symbol_number(self._rep, p_num))
-        return p_num[0]
+        return _c_call('int', _lib.clingo_symbol_number, self._rep)
 
     @property
     def positive(self) -> bool:
         '''
         The sign of a function.
         '''
-        p_positive = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbol_is_positive(self._rep, p_positive))
-        return p_positive[0]
+        return _c_call('bool', _lib.clingo_symbol_is_positive, self._rep)
 
     @property
     def string(self) -> str:
         '''
         The value of a string.
         '''
-        p_str = _ffi.new('char**')
-        _handle_error(_lib.clingo_symbol_string(self._rep, p_str))
-        return _ffi.string(p_str[0]).decode()
+        return _to_str(_c_call('char*', _lib.clingo_symbol_string, self._rep))
 
     @property
     def type(self) -> SymbolType:
@@ -412,9 +414,7 @@ def String(string: str) -> Symbol:
     Symbol
     '''
     # pylint: disable=invalid-name
-    p_rep = _ffi.new('clingo_symbol_t*')
-    _handle_error(_lib.clingo_symbol_create_string(string.encode(), p_rep))
-    return Symbol(p_rep[0])
+    return Symbol(_c_call('clingo_symbol_t', _lib.clingo_symbol_create_string, string.encode()))
 
 def Tuple_(arguments: Sequence[Symbol]) -> Symbol:
     '''
@@ -484,9 +484,7 @@ def parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, messa
     else:
         c_handle = _ffi.NULL
         c_cb = _ffi.NULL
-    p_sym = _ffi.new('clingo_symbol_t*')
-    _handle_error(_lib.clingo_parse_term(string.encode(), c_cb, c_handle, message_limit, p_sym))
-    return Symbol(p_sym[0])
+    return Symbol(_c_call('clingo_symbol_t', _lib.clingo_parse_term, string.encode(), c_cb, c_handle, message_limit))
 
 # {{{1 symbolic atoms [100%]
 
@@ -529,36 +527,28 @@ class SymbolicAtom:
         '''
         Whether the atom is an external atom.
         '''
-        p_ret = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbolic_atoms_is_external(self._rep, self._it, p_ret))
-        return p_ret[0]
+        return _c_call('bool', _lib.clingo_symbolic_atoms_is_external, self._rep, self._it)
 
     @property
     def is_fact(self) -> bool:
         '''
         Whether the atom is a fact.
         '''
-        p_ret = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbolic_atoms_is_fact(self._rep, self._it, p_ret))
-        return p_ret[0]
+        return _c_call('bool', _lib.clingo_symbolic_atoms_is_fact, self._rep, self._it)
 
     @property
     def literal(self) -> int:
         '''
         The program literal associated with the atom.
         '''
-        p_ret = _ffi.new('clingo_literal_t*')
-        _handle_error(_lib.clingo_symbolic_atoms_literal(self._rep, self._it, p_ret))
-        return p_ret[0]
+        return _c_call('clingo_literal_t', _lib.clingo_symbolic_atoms_literal, self._rep, self._it)
 
     @property
     def symbol(self) -> Symbol:
         '''
         The representation of the atom in form of a symbol.
         '''
-        p_ret = _ffi.new('clingo_symbol_t*')
-        _handle_error(_lib.clingo_symbolic_atoms_symbol(self._rep, self._it, p_ret))
-        return Symbol(p_ret[0])
+        return Symbol(_c_call('clingo_symbol_t', _lib.clingo_symbolic_atoms_symbol, self._rep, self._it))
 
 class SymbolicAtoms(Lookup[Symbol,SymbolicAtom]):
     '''
@@ -598,10 +588,7 @@ class SymbolicAtoms(Lookup[Symbol,SymbolicAtom]):
         p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
         p_valid = _ffi.new('bool*')
         _handle_error(_lib.clingo_symbolic_atoms_begin(self._rep, p_sig, p_it))
-        while True:
-            _handle_error(_lib.clingo_symbolic_atoms_is_valid(self._rep, p_it[0], p_valid))
-            if not p_valid[0]:
-                break
+        while _c_call(p_valid, _lib.clingo_symbolic_atoms_is_valid, self._rep, p_it[0]):
             yield SymbolicAtom(self._rep, p_it[0])
             _handle_error(_lib.clingo_symbolic_atoms_next(self._rep, p_it[0], p_it))
 
@@ -611,28 +598,21 @@ class SymbolicAtoms(Lookup[Symbol,SymbolicAtom]):
     def __contains__(self, symbol) -> bool:
         if not isinstance(symbol, Symbol):
             return False
-        p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
-        _handle_error(_lib.clingo_symbolic_atoms_find(self._rep, symbol._rep, p_it))
 
-        p_valid = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbolic_atoms_is_valid(self._rep, p_it[0], p_valid))
-        return p_valid[0]
+        it = _c_call('clingo_symbolic_atom_iterator_t', _lib.clingo_symbolic_atoms_find, self._rep, symbol._rep)
+
+        return _c_call('bool', _lib.clingo_symbolic_atoms_is_valid, self._rep, it)
 
     def __getitem__(self, symbol: Symbol) -> Optional[SymbolicAtom]:
-        p_it = _ffi.new('clingo_symbolic_atom_iterator_t*')
-        _handle_error(_lib.clingo_symbolic_atoms_find(self._rep, symbol._rep, p_it))
+        it = _c_call('clingo_symbolic_atom_iterator_t', _lib.clingo_symbolic_atoms_find, self._rep, symbol._rep)
 
-        p_valid = _ffi.new('bool*')
-        _handle_error(_lib.clingo_symbolic_atoms_is_valid(self._rep, p_it[0], p_valid))
-        if not p_valid[0]:
+        if not _c_call('bool', _lib.clingo_symbolic_atoms_is_valid, self._rep, it):
             return None
 
-        return SymbolicAtom(self._rep, p_it[0])
+        return SymbolicAtom(self._rep, it)
 
     def __len__(self) -> int:
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_symbolic_atoms_size(self._rep, p_size))
-        return p_size[0]
+        return _c_call('size_t', _lib.clingo_symbolic_atoms_size, self._rep)
 
     def by_signature(self, name: str, arity: int, positive: bool=True) -> Iterator[SymbolicAtom]:
         '''
@@ -662,13 +642,12 @@ class SymbolicAtoms(Lookup[Symbol,SymbolicAtom]):
 
         The Boolean indicates the sign of the signature.
         '''
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_symbolic_atoms_signatures_size(self._rep, p_size))
+        size = _c_call('size_t', _lib.clingo_symbolic_atoms_signatures_size, self._rep)
 
-        p_sigs = _ffi.new('clingo_signature_t[]', p_size[0])
-        _handle_error(_lib.clingo_symbolic_atoms_signatures(self._rep, p_sigs, p_size[0]))
+        p_sigs = _ffi.new('clingo_signature_t[]', size)
+        _handle_error(_lib.clingo_symbolic_atoms_signatures(self._rep, p_sigs, size))
 
-        return [ (_ffi.string(_lib.clingo_signature_name(c_sig)).decode(),
+        return [ (_to_str(_lib.clingo_signature_name(c_sig)),
                   _lib.clingo_signature_arity(c_sig),
                   _lib.clingo_signature_is_positive(c_sig)) for c_sig in p_sigs ]
 
@@ -731,37 +710,30 @@ class TheoryTerm:
         '''
         The arguments of the term (for functions, tuples, list, and sets).
         '''
-        p_size = _ffi.new('size_t*')
-        p_args = _ffi.new('clingo_id_t**')
-        _handle_error(_lib.clingo_theory_atoms_term_arguments(self._rep, self._idx, p_args, p_size))
-        return [TheoryTerm(self._rep, p_args[0][i]) for i in range(p_size[0])]
+        args, size = _c_call2('clingo_id_t*', 'size_t', _lib.clingo_theory_atoms_term_arguments, self._rep, self._idx)
+        return [TheoryTerm(self._rep, args[i]) for i in range(size)]
 
     @property
     def name(self) -> str:
         '''
         The name of the term (for symbols and functions).
         '''
-        p_name = _ffi.new('char**')
-        _handle_error(_lib.clingo_theory_atoms_term_name(self._rep, self._idx, p_name))
-        return _ffi.string(p_name[0]).decode()
+        return _to_str(_c_call('char*', _lib.clingo_theory_atoms_term_name, self._rep, self._idx))
 
     @property
     def number(self) -> int:
         '''
         The numeric representation of the term (for numbers).
         '''
-        p_num = _ffi.new('int*')
-        _handle_error(_lib.clingo_theory_atoms_term_number(self._rep, self._idx, p_num))
-        return p_num[0]
+        return _c_call('int', _lib.clingo_theory_atoms_term_number, self._rep, self._idx)
 
     @property
     def type(self) -> TheoryTermType:
         '''
         The type of the theory term.
         '''
-        p_type = _ffi.new('clingo_theory_term_type_t*')
-        _handle_error(_lib.clingo_theory_atoms_term_type(self._rep, self._idx, p_type))
-        return TheoryTermType(p_type[0])
+        type_ = _c_call('clingo_theory_term_type_t', _lib.clingo_theory_atoms_term_type, self._rep, self._idx)
+        return TheoryTermType(type_)
 
 @total_ordering
 class TheoryElement:
@@ -794,10 +766,9 @@ class TheoryElement:
         '''
         The condition of the element.
         '''
-        p_size = _ffi.new('size_t*')
-        p_cond = _ffi.new('clingo_literal_t**')
-        _handle_error(_lib.clingo_theory_atoms_element_condition(self._rep, self._idx, p_cond, p_size))
-        return [p_cond[0][i] for i in range(p_size[0])]
+        cond, size = _c_call2('clingo_literal_t*', 'size_t', _lib.clingo_theory_atoms_element_condition,
+                              self._rep, self._idx)
+        return [cond[i] for i in range(size)]
 
     @property
     def condition_id(self) -> int:
@@ -806,19 +777,15 @@ class TheoryElement:
         `PropagateInit.solver_literal` to obtain a solver literal equivalent to
         the condition.
         '''
-        p_id = _ffi.new('clingo_literal_t*')
-        _handle_error(_lib.clingo_theory_atoms_element_condition_id(self._rep, self._idx, p_id))
-        return p_id[0]
+        return _c_call('clingo_literal_t', _lib.clingo_theory_atoms_element_condition_id, self._rep, self._idx)
 
     @property
     def terms(self) -> List[TheoryTerm]:
         '''
         The tuple of the element.
         '''
-        p_size = _ffi.new('size_t*')
-        p_terms = _ffi.new('clingo_id_t**')
-        _handle_error(_lib.clingo_theory_atoms_element_tuple(self._rep, self._idx, p_terms, p_size))
-        return [TheoryTerm(self._rep, p_terms[0][i]) for i in range(p_size[0])]
+        terms, size = _c_call2('clingo_id_t*', 'size_t', _lib.clingo_theory_atoms_element_tuple, self._rep, self._idx)
+        return [TheoryTerm(self._rep, terms[i]) for i in range(size)]
 
 @total_ordering
 class TheoryAtom:
@@ -851,44 +818,35 @@ class TheoryAtom:
         '''
         The elements of the atom.
         '''
-        p_size = _ffi.new('size_t*')
-        p_elems = _ffi.new('clingo_id_t**')
-        _handle_error(_lib.clingo_theory_atoms_atom_elements(self._rep, self._idx, p_elems, p_size))
-        return [TheoryElement(self._rep, p_elems[0][i]) for i in range(p_size[0])]
+        elems, size = _c_call2('clingo_id_t*', 'size_t', _lib.clingo_theory_atoms_atom_elements, self._rep, self._idx)
+        return [TheoryElement(self._rep, elems[i]) for i in range(size)]
 
     @property
     def guard(self) -> Optional[Tuple[str, TheoryTerm]]:
         '''
         The guard of the atom or None if the atom has no guard.
         '''
-        p_has_guard = _ffi.new('bool*')
-        _handle_error(_lib.clingo_theory_atoms_atom_has_guard(self._rep, self._idx, p_has_guard))
-        if not p_has_guard[0]:
+        if not _c_call('bool', _lib.clingo_theory_atoms_atom_has_guard, self._rep, self._idx):
             return None
 
-        p_conn = _ffi.new('char**')
-        p_term = _ffi.new('clingo_id_t*')
-        _handle_error(_lib.clingo_theory_atoms_atom_guard(self._rep, self._idx, p_conn, p_term))
+        conn, term = _c_call2('char*', 'clingo_id_t', _lib.clingo_theory_atoms_atom_guard, self._rep, self._idx)
 
-        return (_ffi.string(p_conn[0]).decode(), TheoryTerm(self._rep, p_term[0]))
+        return (_to_str(conn), TheoryTerm(self._rep, term))
 
     @property
     def literal(self) -> int:
         '''
         The program literal associated with the atom.
         '''
-        p_lit = _ffi.new('clingo_literal_t*')
-        _handle_error(_lib.clingo_theory_atoms_atom_literal(self._rep, self._idx, p_lit))
-        return p_lit[0]
+        return _c_call('clingo_literal_t', _lib.clingo_theory_atoms_atom_literal, self._rep, self._idx)
 
     @property
     def term(self) -> TheoryTerm:
         '''
         The term of the atom.
         '''
-        p_term = _ffi.new('clingo_id_t*')
-        _handle_error(_lib.clingo_theory_atoms_atom_term(self._rep, self._idx, p_term))
-        return TheoryTerm(self._rep, p_term[0])
+        term = _c_call('clingo_id_t', _lib.clingo_theory_atoms_atom_term, self._rep, self._idx)
+        return TheoryTerm(self._rep, term)
 
 # {{{1 solving [100%]
 
@@ -1005,10 +963,8 @@ class SolveControl:
         '''
         `SymbolicAtoms` object to inspect the symbolic atoms.
         '''
-        p_atoms = _ffi.new('clingo_symbolic_atoms_t**')
-        _handle_error(_lib.clingo_solve_control_symbolic_atoms(self._rep, p_atoms))
-
-        return SymbolicAtoms(p_atoms[0])
+        atoms = _c_call('clingo_symbolic_atoms_t*', _lib.clingo_solve_control_symbolic_atoms, self._rep)
+        return SymbolicAtoms(atoms)
 
 class ModelType(Enum):
     '''
@@ -1084,9 +1040,7 @@ class Model:
         The atom must be represented using a function symbol.
         '''
         # pylint: disable=protected-access
-        p_ret = _ffi.new('bool*')
-        _handle_error(_lib.clingo_model_contains(self._rep, atom._rep, p_ret))
-        return p_ret[0]
+        return _c_call('bool', _lib.clingo_model_contains, self._rep, atom._rep)
 
     def extend(self, symbols: Sequence[Symbol]) -> None:
         '''
@@ -1128,9 +1082,7 @@ class Model:
         bool
             Whether the given program literal is true.
         '''
-        p_ret = _ffi.new('bool*')
-        _handle_error(_lib.clingo_model_is_true(self._rep, literal, p_ret))
-        return p_ret[0]
+        return _c_call('bool', _lib.clingo_model_is_true, self._rep, literal)
 
     def symbols(self, atoms: bool=False, terms: bool=False, shown: bool=False, csp: bool=False,
                 theory: bool=False, complement: bool=False) -> List[Symbol]:
@@ -1178,11 +1130,10 @@ class Model:
         if complement:
             show |= _lib.clingo_show_type_complement
 
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_model_symbols_size(self._rep, show, p_size))
+        size = _c_call('size_t', _lib.clingo_model_symbols_size, self._rep, show)
 
-        p_symbols = _ffi.new('clingo_symbol_t[]', p_size[0])
-        _handle_error(_lib.clingo_model_symbols(self._rep, show, p_symbols, p_size[0]))
+        p_symbols = _ffi.new('clingo_symbol_t[]', size)
+        _handle_error(_lib.clingo_model_symbols(self._rep, show, p_symbols, size))
 
         symbols = []
         for c_symbol in p_symbols:
@@ -1197,10 +1148,8 @@ class Model:
         '''
         Object that allows for controlling the running search.
         '''
-        p_ctl = _ffi.new('clingo_solve_control_t**')
-        _handle_error(_lib.clingo_model_context(self._rep, p_ctl))
-
-        return SolveControl(p_ctl[0])
+        ctl = _c_call('clingo_solve_control_t*', _lib.clingo_model_context, self._rep)
+        return SolveControl(ctl)
 
     @property
     def cost(self) -> List[int]:
@@ -1209,11 +1158,10 @@ class Model:
 
         The return values correspond to clasp's cost output.
         '''
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_model_cost_size(self._rep, p_size))
+        size = _c_call('size_t', _lib.clingo_model_cost_size, self._rep)
 
-        p_costs = _ffi.new('int64_t[]', p_size[0])
-        _handle_error(_lib.clingo_model_cost(self._rep, p_costs, p_size[0]))
+        p_costs = _ffi.new('int64_t[]', size)
+        _handle_error(_lib.clingo_model_cost(self._rep, p_costs, size))
 
         return list(p_costs)
 
@@ -1222,40 +1170,28 @@ class Model:
         '''
         The running number of the model.
         '''
-        p_num = _ffi.new('uint64_t*')
-        _handle_error(_lib.clingo_model_number(self._rep, p_num))
-
-        return p_num[0]
+        return _c_call('uint64_t', _lib.clingo_model_number, self._rep)
 
     @property
     def optimality_proven(self) -> bool:
         '''
         Whether the optimality of the model has been proven.
         '''
-        p_proof = _ffi.new('bool*')
-        _handle_error(_lib.clingo_model_optimality_proven(self._rep, p_proof))
-
-        return p_proof[0]
+        return _c_call('bool', _lib.clingo_model_optimality_proven, self._rep)
 
     @property
     def thread_id(self) -> int:
         '''
         The id of the thread which found the model.
         '''
-        p_num = _ffi.new('clingo_id_t*')
-        _handle_error(_lib.clingo_model_thread_id(self._rep, p_num))
-
-        return p_num[0]
+        return _c_call('clingo_id_t', _lib.clingo_model_thread_id, self._rep)
 
     @property
     def type(self) -> ModelType:
         '''
         The type of the model.
         '''
-        p_type = _ffi.new('clingo_model_type_t*')
-        _handle_error(_lib.clingo_model_type(self._rep, p_type))
-
-        return ModelType(p_type[0])
+        return ModelType(_c_call('clingo_model_type_t', _lib.clingo_model_type, self._rep))
 
 class SolveHandle:
     '''
@@ -2740,55 +2676,42 @@ class Configuration:
 
     @property
     def _type(self) -> int:
-        p_type = _ffi.new('clingo_configuration_type_bitset_t*')
-        _handle_error(_lib.clingo_configuration_type(self._rep, self._key, p_type))
-        return p_type[0]
+        return _c_call('clingo_configuration_type_bitset_t', _lib.clingo_configuration_type, self._rep, self._key)
 
     def _get_subkey(self, name: str) -> Optional[int]:
         if self._type & _lib.clingo_configuration_type_map:
-            p_haskey = _ffi.new('bool*')
-            _handle_error(_lib.clingo_configuration_map_has_subkey(self._rep, self._key, name.encode(), p_haskey))
-            if p_haskey[0]:
-                p_subkey = _ffi.new('clingo_id_t*')
-                _handle_error(_lib.clingo_configuration_map_at(self._rep, self._key, name.encode(), p_subkey))
-                return p_subkey[0]
+            if _c_call('bool', _lib.clingo_configuration_map_has_subkey, self._rep, self._key, name.encode()):
+                return _c_call('clingo_id_t', _lib.clingo_configuration_map_at, self._rep, self._key, name.encode())
         return None
 
     def __len__(self):
         if self._type & _lib.clingo_configuration_type_array:
-            p_size = _ffi.new('size_t*')
-            _handle_error(_lib.clingo_configuration_array_size(self._rep, self._key, p_size))
-            return p_size[0]
+            return _c_call('size_t', _lib.clingo_configuration_array_size, self._rep, self._key)
         return 0
 
     def __getitem__(self, idx: int) -> 'Configuration':
         if idx < 0 or idx >= len(self):
             raise IndexError("invalid index")
 
-        p_subkey = _ffi.new('clingo_id_t*')
-        _handle_error(_lib.clingo_configuration_array_at(self._rep, self._key, idx, p_subkey))
-        return Configuration(self._rep, p_subkey[0])
+        key = _c_call('clingo_id_t', _lib.clingo_configuration_array_at, self._rep, self._key, idx)
+        return Configuration(self._rep, key)
 
     def __getattr__(self, name: str) -> Union[None,str,'Configuration']:
         key = self._get_subkey(name)
         if key is None:
             raise AttributeError(f'no attribute: {name}')
 
-        p_type = _ffi.new('clingo_configuration_type_bitset_t*')
-        _handle_error(_lib.clingo_configuration_type(self._rep, key, p_type))
+        type_ = _c_call('clingo_configuration_type_bitset_t', _lib.clingo_configuration_type, self._rep, key)
 
-        if p_type[0] & _lib.clingo_configuration_type_value:
-            p_assigned = _ffi.new('bool*')
-            _handle_error(_lib.clingo_configuration_value_is_assigned(self._rep, key, p_assigned))
-            if not p_assigned[0]:
+        if type_ & _lib.clingo_configuration_type_value:
+            if not _c_call('bool', _lib.clingo_configuration_value_is_assigned, self._rep, key):
                 return None
 
-            p_size = _ffi.new('size_t*')
-            _handle_error(_lib.clingo_configuration_value_get_size(self._rep, key, p_size))
+            size = _c_call('size_t', _lib.clingo_configuration_value_get_size, self._rep, key)
 
-            p_val = _ffi.new('char[]', p_size[0])
-            _handle_error(_lib.clingo_configuration_value_get(self._rep, key, p_val, p_size[0]))
-            return _ffi.string(p_val).decode()
+            c_val = _ffi.new('char[]', size)
+            _handle_error(_lib.clingo_configuration_value_get(self._rep, key, c_val, size))
+            return _to_str(c_val)
 
         return Configuration(self._rep, key)
 
@@ -2815,9 +2738,7 @@ class Configuration:
         key = self._get_subkey(name)
         if key is None:
             raise RuntimeError(f'unknown option {name}')
-        p_description = _ffi.new('char**')
-        _handle_error(_lib.clingo_configuration_description(self._rep, key, p_description))
-        return _ffi.string(p_description[0]).decode()
+        return _to_str(_c_call('char*', _lib.clingo_configuration_description, self._rep, key))
 
     @property
     def keys(self) -> Optional[List[str]]:
@@ -2829,12 +2750,9 @@ class Configuration:
         ret = None
         if self._type & _lib.clingo_configuration_type_map:
             ret = []
-            p_size = _ffi.new('size_t*')
-            _handle_error(_lib.clingo_configuration_map_size(self._rep, self._key, p_size))
-            for i in range(p_size[0]):
-                p_str = _ffi.new('char**')
-                _handle_error(_lib.clingo_configuration_map_subkey_name(self._rep, self._key, i, p_str))
-                ret.append(_ffi.string(p_str[0]).decode())
+            for i in range(_c_call('size_t', _lib.clingo_configuration_map_size, self._rep, self._key)):
+                name = _c_call('char*', _lib.clingo_configuration_map_subkey_name, self._rep, self._key, i)
+                ret.append(_to_str(name))
         return ret
 
 # {{{1 statistics [100%]
@@ -3186,34 +3104,23 @@ def _statistics(stats, key):
     '''
     Transform clingo's statistics into python type.
     '''
-    p_type = _ffi.new('clingo_statistics_type_t *')
-    _handle_error(_lib.clingo_statistics_type(stats, key, p_type))
+    type_ = _c_call('clingo_statistics_type_t ', _lib.clingo_statistics_type, stats, key)
 
-    if p_type[0] == _lib.clingo_statistics_type_value:
-        p_val = _ffi.new('double*')
-        _handle_error(_lib.clingo_statistics_value_get(stats, key, p_val))
-        return p_val[0]
+    if type_ == _lib.clingo_statistics_type_value:
+        return _c_call('double', _lib.clingo_statistics_value_get, stats, key)
 
-    if p_type[0] == _lib.clingo_statistics_type_array:
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_statistics_array_size(stats, key, p_size))
+    if type_ == _lib.clingo_statistics_type_array:
         ret = []
-        for i in range(p_size[0]):
-            p_key = _ffi.new('uint64_t*')
-            _handle_error(_lib.clingo_statistics_array_at(stats, key, i, p_key))
-            ret.append(_statistics(stats, p_key[0]))
+        for i in range(_c_call('size_t', _lib.clingo_statistics_array_size, stats, key)):
+            ret.append(_statistics(stats, _c_call('uint64_t', _lib.clingo_statistics_array_at, stats, key, i)))
         return ret
 
-    assert p_type[0] == _lib.clingo_statistics_type_map
-    p_size = _ffi.new('size_t*')
-    _handle_error(_lib.clingo_statistics_map_size(stats, key, p_size))
+    assert type_ == _lib.clingo_statistics_type_map
     ret = {}
-    for i in range(p_size[0]):
-        p_name = _ffi.new('char**')
-        p_key = _ffi.new('uint64_t*')
-        _handle_error(_lib.clingo_statistics_map_subkey_name(stats, key, i, p_name))
-        _handle_error(_lib.clingo_statistics_map_at(stats, key, p_name[0], p_key))
-        ret[_ffi.string(p_name[0]).decode()] = _statistics(stats, p_key[0])
+    for i in range(_c_call('size_t', _lib.clingo_statistics_map_size, stats, key)):
+        name = _c_call('char*', _lib.clingo_statistics_map_subkey_name, stats, key, i)
+        subkey = _c_call('uint64_t', _lib.clingo_statistics_map_at, stats, key, name)
+        ret[_to_str(name)] = _statistics(stats, subkey)
     return ret
 
 class Control:
@@ -3249,9 +3156,8 @@ class Control:
         for i, arg in enumerate(arguments):
             c_mem.append(_ffi.new("char[]", arg.encode()))
             c_args[i] = c_mem[-1]
-        p_ctl = _ffi.new('clingo_control_t **')
-        _handle_error(_lib.clingo_control_new(c_args, len(arguments), c_cb, c_handle, message_limit, p_ctl))
-        self._rep = p_ctl[0]
+        self._rep = _c_call('clingo_control_t *', _lib.clingo_control_new,
+                            c_args, len(arguments), c_cb, c_handle, message_limit)
         self._handler = None
         self._statistics = None
         self._statistics_call = -1.0
@@ -3342,9 +3248,7 @@ class Control:
         -------
         Backend
         '''
-        p_backend = _ffi.new('clingo_backend_t**')
-        _handle_error(_lib.clingo_control_backend(self._rep, p_backend))
-        return Backend(p_backend[0])
+        return Backend(_c_call('clingo_backend_t*', _lib.clingo_control_backend, self._rep))
 
     def cleanup(self) -> None:
         '''
@@ -3391,14 +3295,10 @@ class Control:
         Optional[Symbol]
             The function returns `None` if no matching constant definition exists.
         '''
-        p_exits = _ffi.new('bool*')
-        _handle_error(_lib.clingo_control_has_const(self._rep, name.encode(), p_exits))
-        if not p_exits[0]:
+        if not _c_call('bool', _lib.clingo_control_has_const, self._rep, name.encode()):
             return None
 
-        p_sym = _ffi.new('clingo_symbol_t*')
-        _handle_error(_lib.clingo_control_get_const(self._rep, name.encode(), p_sym))
-        return Symbol(p_sym[0])
+        return Symbol(_c_call('clingo_symbol_t', _lib.clingo_control_get_const, self._rep, name.encode()))
 
     def ground(self, parts: Sequence[Tuple[str,Sequence[Symbol]]], context: Any=None) -> None:
         '''
@@ -3733,12 +3633,9 @@ class Control:
         '''
         `Configuration` object to change the configuration.
         '''
-        p_conf = _ffi.new('clingo_configuration_t**')
-        _handle_error(_lib.clingo_control_configuration(self._rep, p_conf))
-
-        p_key = _ffi.new('clingo_id_t*')
-        _handle_error(_lib.clingo_configuration_root(p_conf[0], p_key))
-        return Configuration(p_conf[0], p_key[0])
+        conf = _c_call('clingo_configuration_t*', _lib.clingo_control_configuration, self._rep)
+        key = _c_call('clingo_id_t', _lib.clingo_configuration_root, conf)
+        return Configuration(conf, key)
 
     @property
     def enable_cleanup(self) -> bool:
@@ -3833,25 +3730,20 @@ class Control:
             }
 
         '''
-        p_stats = _ffi.new('clingo_statistics_t**')
-        _handle_error(_lib.clingo_control_statistics(self._rep, p_stats))
+        stats = _c_call('clingo_statistics_t*', _lib.clingo_control_statistics, self._rep)
 
         p_key = _ffi.new('uint64_t*')
-        _handle_error(_lib.clingo_statistics_root(p_stats[0], p_key))
-        key_root = p_key[0]
+        key_root = _c_call(p_key, _lib.clingo_statistics_root, stats)
 
-        _handle_error(_lib.clingo_statistics_map_at(p_stats[0], key_root, "summary".encode(), p_key))
-        key_summary = p_key[0]
-        _handle_error(_lib.clingo_statistics_map_at(p_stats[0], key_summary, "call".encode(), p_key))
-        key_call = p_key[0]
-        p_call = _ffi.new('double*')
-        _handle_error(_lib.clingo_statistics_value_get(p_stats[0], key_call, p_call))
-        if self._statistics is not None and p_call[0] != self._statistics_call:
+        key_summary = _c_call(p_key, _lib.clingo_statistics_map_at, stats, key_root, "summary".encode())
+        key_call = _c_call(p_key, _lib.clingo_statistics_map_at, stats, key_summary, "call".encode())
+        call = _c_call('double', _lib.clingo_statistics_value_get, stats, key_call)
+        if self._statistics is not None and call != self._statistics_call:
             self._statistics = None
 
         if self._statistics is None:
-            self._statistics_call = p_call[0]
-            self._statistics = _statistics(p_stats[0], key_root)
+            self._statistics_call = call
+            self._statistics = _statistics(stats, key_root)
 
         return cast(dict, self._statistics)
 
@@ -3860,23 +3752,18 @@ class Control:
         '''
         `SymbolicAtoms` object to inspect the symbolic atoms.
         '''
-        p_ret = _ffi.new('clingo_symbolic_atoms_t**')
-        _handle_error(_lib.clingo_control_symbolic_atoms(self._rep, p_ret))
-        return SymbolicAtoms(p_ret[0])
+        return SymbolicAtoms(_c_call('clingo_symbolic_atoms_t*', _lib.clingo_control_symbolic_atoms, self._rep))
 
     @property
     def theory_atoms(self) -> Iterator[TheoryAtom]:
         '''
         An iterator over the theory atoms.
         '''
-        p_atoms = _ffi.new('clingo_theory_atoms_t**')
-        _handle_error(_lib.clingo_control_theory_atoms(self._rep, p_atoms))
+        atoms = _c_call('clingo_theory_atoms_t*', _lib.clingo_control_theory_atoms, self._rep)
+        size = _c_call('size_t', _lib.clingo_theory_atoms_size, atoms)
 
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_theory_atoms_size(p_atoms[0], p_size))
-
-        for idx in range(p_size[0]):
-            yield TheoryAtom(p_atoms[0], idx)
+        for idx in range(size):
+            yield TheoryAtom(atoms, idx)
 
 # {{{1 application [0%]
 
