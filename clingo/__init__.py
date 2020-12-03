@@ -1350,9 +1350,33 @@ class SolveHandle:
         _lib.clingo_solve_handle_wait(self._rep, 0 if timeout is None else timeout, p_res)
         return p_res[0]
 
-# {{{1 propagators [0%]
+# {{{1 propagators [5%]
 
-class Trail(Sequence[int], metaclass=ABCMeta):
+class _Slice(Sequence[Value]):
+    '''
+    Helper to slice sequences.
+    '''
+    def __init__(self, seq: Sequence[Value], slc: slice):
+        self._seq = seq
+        self._slc = slc
+
+    @property
+    def _rng(self):
+        return range(*self._slc.indices(len(self._seq)))
+
+    def __len__(self) -> int:
+        return len(self._rng)
+
+    def __iter__(self):
+        for idx in self._rng:
+            yield self._seq[idx]
+
+    def __getitem__(self, slc):
+        if isinstance(slc, slice):
+            return _Slice(self, slc)
+        return self._seq[self._rng[slc]]
+
+class Trail(Sequence[int]):
     '''
     Object to access literals assigned by the solver in chronological order.
 
@@ -1361,13 +1385,22 @@ class Trail(Sequence[int], metaclass=ABCMeta):
     literals with same level are implied by this decision literal. Each decision
     level up to and including the current decision level has a valid offset in the
     trail.
-
-    Implements: `Sequence[int]`.
     '''
+    def __init__(self, rep):
+        self._rep = rep
+
+    def __len__(self):
+        return _c_call('uint32_t', _lib.clingo_assignment_trail_size, self._rep)
+
+    def __getitem__(self, slc):
+        if isinstance(slc, slice):
+            return _Slice(self, slc)
+        if slc < 0 or slc >= len(self):
+            raise IndexError('invalid index')
+        return _c_call('clingo_literal_t', _lib.clingo_assignment_trail_at, self._rep, slc)
+
     def begin(self, level: int) -> int:
         '''
-        begin(self, level: int) -> int
-
         Returns the offset of the decision literal with the given decision level in the
         trail.
 
@@ -1380,11 +1413,10 @@ class Trail(Sequence[int], metaclass=ABCMeta):
         -------
         int
         '''
+        return _c_call('uint32_t', _lib.clingo_assignment_trail_begin, self._rep, level)
 
     def end(self, level: int) -> int:
         '''
-        end(self, level: int) -> int
-
         Returns the offset following the last literal with the given decision literal
         in the trail.
 
@@ -1397,7 +1429,7 @@ class Trail(Sequence[int], metaclass=ABCMeta):
         -------
         int
         '''
-
+        return _c_call('uint32_t', _lib.clingo_assignment_trail_end, self._rep, level)
 
 class Assignment(Sequence[int], metaclass=ABCMeta):
     '''
@@ -1594,8 +1626,6 @@ class PropagateInit(metaclass=ABCMeta):
     '''
     def add_clause(self, clause: Iterable[int]) -> bool:
         '''
-        add_clause(self, clause: Iterable[int]) -> bool
-
         Statically adds the given clause to the problem.
 
         Parameters
@@ -1616,8 +1646,6 @@ class PropagateInit(metaclass=ABCMeta):
 
     def add_literal(self, freeze: bool=True) -> int:
         '''
-        add_literal(self, freeze: bool=True) -> int
-
         Statically adds a literal to the solver.
 
         To be able to use the variable in clauses during propagation or add watches to
@@ -1641,8 +1669,6 @@ class PropagateInit(metaclass=ABCMeta):
 
     def add_minimize(self, literal: int, weight: int, priority: int=0) -> None:
         '''
-        add_minimize(self, literal: int, weight: int, priority: int=0) -> None
-
         Extends the solver's minimize constraint with the given weighted literal.
 
         Parameters
@@ -1657,8 +1683,6 @@ class PropagateInit(metaclass=ABCMeta):
 
     def add_watch(self, literal: int, thread_id: Optional[int]=None) -> None:
         '''
-        add_watch(self, literal: int, thread_id: Optional[int]=None) -> None
-
         Add a watch for the solver literal in the given phase.
 
         Parameters
@@ -1713,8 +1737,6 @@ class PropagateInit(metaclass=ABCMeta):
 
     def propagate(self) -> bool:
         '''
-        propagate(self) -> bool
-
         Propagates consequences of the underlying problem excluding registered propagators.
 
         Returns
@@ -1732,8 +1754,6 @@ class PropagateInit(metaclass=ABCMeta):
 
     def solver_literal(self, literal: int) -> int:
         '''
-        solver_literal(self, literal: int) -> int
-
         Maps the given program literal or condition id to its solver literal.
 
         Parameters
