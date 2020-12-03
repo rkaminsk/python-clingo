@@ -137,7 +137,8 @@ def _cb_error_handler(param: str):
         if traceback is not None:
             handler = _ffi.from_handle(traceback.tb_frame.f_locals[param])
             handler.error = (exception, exc_value, traceback)
-            _lib.clingo_set_error(_lib.clingo_error_unknown, "python exception".encode())
+            _lib.clingo_set_error(_lib.clingo_error_unknown, str(exc_value).encode())
+            print_exception(exception, exc_value, traceback)
         else:
             _lib.clingo_set_error(_lib.clingo_error_runtime, "error in callback".encode())
         return False
@@ -2825,9 +2826,11 @@ class StatisticsArray(MutableSequence[StatisticsValue]):
         self._key = key
 
     def __len__(self):
-        return _c_call('size_T', _lib.clingo_statistics_array_size, self._rep, self._key)
+        return _c_call('size_t', _lib.clingo_statistics_array_size, self._rep, self._key)
 
     def __getitem__(self, index):
+        if index < 0 or index >= len(self):
+            raise IndexError('invalid index')
         key = _c_call('uint64_t', _lib.clingo_statistics_array_at, self._rep, self._key, index)
         return _mutable_statistics_get(self._rep, key)
 
@@ -2844,6 +2847,9 @@ class StatisticsArray(MutableSequence[StatisticsValue]):
 
     def __delitem__(self, index):
         raise NotImplementedError('deletion is not supported')
+
+    def __add__(self, other):
+        raise NotImplementedError('only inplace concatenation is supported')
 
     def __iadd__(self, other):
         for x in other:
@@ -2935,6 +2941,8 @@ class StatisticsMap(MutableMapping[str, StatisticsValue]):
         return _c_call('size_t', _lib.clingo_statistics_map_size, self._rep, self._key)
 
     def __getitem__(self, name: str):
+        if not name in self:
+            raise KeyError('key not found')
         key = _c_call('uint64_t', _lib.clingo_statistics_map_at, self._rep, self._key, name.encode())
         return _mutable_statistics_get(self._rep, key)
 
@@ -3050,7 +3058,7 @@ class _SolveEventHandler:
 
     def on_statistics(self, step, accu):
         if self._on_statistics is not None:
-            self.on_statistics(_mutable_statistics(step), _mutable_statistics(accu))
+            self._on_statistics(_mutable_statistics(step), _mutable_statistics(accu))
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_solve_event_callback(type_, event, data, goon):
