@@ -1886,7 +1886,7 @@ class Propagator(metaclass=ABCMeta):
     Propagator interface for custom constraints.
     '''
     def init(self, init: PropagateInit) -> None:
-        """
+        '''
         This function is called once before each solving step.
 
         It is used to map relevant program literals to solver literals, add
@@ -1906,10 +1906,10 @@ class Propagator(metaclass=ABCMeta):
         -----
         This is the last point to access theory atoms.  Once the search has
         started, they are no longer accessible.
-        """
+        '''
 
     def propagate(self, control: PropagateControl, changes: Sequence[int]) -> None:
-        """
+        '''
         Can be used to propagate solver literals given a partial assignment.
 
         Parameters
@@ -1942,11 +1942,11 @@ class Propagator(metaclass=ABCMeta):
         Note that this function can be called from different solving threads.
         Each thread has its own assignment and id, which can be obtained using
         `PropagateControl.thread_id`.
-        """
+        '''
 
     def undo(self, thread_id: int, assignment: Assignment,
              changes: Sequence[int]) -> None:
-        """
+        '''
         Called whenever a solver with the given id undos assignments to watched
         solver literals.
 
@@ -1968,10 +1968,10 @@ class Propagator(metaclass=ABCMeta):
         This function is meant to update assignment dependent state in a
         propagator but not to modify the current state of the solver.
         Furthermore, errors raised in the function lead to program termination.
-        """
+        '''
 
     def check(self, control: PropagateControl) -> None:
-        """
+        '''
         This function is similar to propagate but is called without a change
         set on propagation fixpoints.
 
@@ -1990,10 +1990,10 @@ class Propagator(metaclass=ABCMeta):
         Notes
         -----
         This function is called even if no watches have been added.
-        """
+        '''
 
     def decide(self, thread_id: int, assignment: Assignment, fallback: int) -> int:
-        """
+        '''
         This function allows a propagator to implement domain-specific
         heuristics.
 
@@ -2020,7 +2020,7 @@ class Propagator(metaclass=ABCMeta):
         function can return 0 to let a propagator registered later make a
         decision. If all propagators return 0, then the fallback literal is
         used.
-        """
+        '''
 
 # {{{1 ground program inspection/building [0%]
 
@@ -2057,12 +2057,12 @@ class HeuristicType(Enum):
     # True_: HeuristicType
 
 class Observer(metaclass=ABCMeta):
-    """
+    '''
     Interface that has to be implemented to inspect rules produced during
     grounding.
-    """
+    '''
     def init_program(self, incremental: bool) -> None:
-        """
+        '''
         Called once in the beginning.
 
         Parameters
@@ -2074,19 +2074,19 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def begin_step(self) -> None:
-        """
+        '''
         Marks the beginning of a block of directives passed to the solver.
 
         Returns
         -------
         None
-        """
+        '''
 
     def rule(self, choice: bool, head: Sequence[int], body: Sequence[int]) -> None:
-        """
+        '''
         Observe rules passed to the solver.
 
         Parameters
@@ -2101,11 +2101,11 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def weight_rule(self, choice: bool, head: Sequence[int], lower_bound: int,
                     body: Sequence[Tuple[int,int]]) -> None:
-        """
+        '''
         Observe rules with one weight constraint in the body passed to the
         solver.
 
@@ -2124,10 +2124,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def minimize(self, priority: int, literals: Sequence[Tuple[int,int]]) -> None:
-        """
+        '''
         Observe minimize directives (or weak constraints) passed to the
         solver.
 
@@ -2142,10 +2142,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def project(self, atoms: Sequence[int]) -> None:
-        """
+        '''
         Observe projection directives passed to the solver.
 
         Parameters
@@ -2156,10 +2156,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def output_atom(self, symbol: Symbol, atom: int) -> None:
-        """
+        '''
         Observe shown atoms passed to the solver.  Facts do not have an
         associated program atom. The value of the atom is set to zero.
 
@@ -2173,10 +2173,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def output_term(self, symbol: Symbol, condition: Sequence[int]) -> None:
-        """
+        '''
         Observe shown terms passed to the solver.
 
         Parameters
@@ -2190,11 +2190,11 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def output_csp(self, symbol: Symbol, value: int,
                    condition: Sequence[int]) -> None:
-        """
+        '''
         Observe shown csp variables passed to the solver.
 
         Parameters
@@ -2210,10 +2210,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def external(self, atom: int, value: TruthValue) -> None:
-        """
+        '''
         Observe external statements passed to the solver.
 
         Parameters
@@ -2226,10 +2226,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def assume(self, literals: Sequence[int]) -> None:
-        """
+        '''
         Observe assumption directives passed to the solver.
 
         Parameters
@@ -2241,11 +2241,11 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def heuristic(self, atom: int, type_: HeuristicType, bias: int,
                   priority: int, condition: Sequence[int]) -> None:
-        """
+        '''
         Observe heuristic directives passed to the solver.
 
         Parameters
@@ -2264,11 +2264,11 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def acyc_edge(self, node_u: int, node_v: int,
                   condition: Sequence[int]) -> None:
-        """
+        '''
         Observe edge directives passed to the solver.
 
         Parameters
@@ -2284,10 +2284,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def theory_term_number(self, term_id: int, number: int) -> None:
-        """
+        '''
         Observe numeric theory terms.
 
         Parameters
@@ -2300,10 +2300,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def theory_term_string(self, term_id : int, name : str) -> None:
-        """
+        '''
         Observe string theory terms.
 
         Parameters
@@ -2316,11 +2316,11 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def theory_term_compound(self, term_id: int, name_id_or_type: int,
                              arguments: Sequence[int]) -> None:
-        """
+        '''
         Observe compound theory terms.
 
         Parameters
@@ -2340,11 +2340,11 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def theory_element(self, element_id: int, terms: Sequence[int],
                        condition: Sequence[int]) -> None:
-        """
+        '''
         Observe theory elements.
 
         Parameters
@@ -2359,11 +2359,11 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def theory_atom(self, atom_id_or_zero: int, term_id: int,
                     elements: Sequence[int]) -> None:
-        """
+        '''
         Observe theory atoms without guard.
 
         Parameters
@@ -2378,12 +2378,12 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def theory_atom_with_guard(self, atom_id_or_zero: int, term_id: int,
                                elements: Sequence[int], operator_id: int,
                                right_hand_side_id: int) -> None:
-        """
+        '''
         Observe theory atoms with guard.
 
         Parameters
@@ -2402,10 +2402,10 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def end_step(self) -> None:
-        """
+        '''
         Marks the end of a block of directives passed to the solver.
 
         This function is called right before solving starts.
@@ -2413,7 +2413,7 @@ class Observer(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
 class Backend(ContextManager['Backend'], metaclass=ABCMeta):
     '''
@@ -3785,7 +3785,7 @@ class Flag:
         The initial value of the flag.
     '''
     def __init__(self, value: bool=False):
-        pass
+        self.flag = value
 
     flag: bool
     '''
@@ -3864,7 +3864,7 @@ class ApplicationOptions(metaclass=ABCMeta):
         '''
 
 class Application(metaclass=ABCMeta):
-    """
+    '''
     Interface that has to be implemented to customize clingo.
 
     Attributes
@@ -3874,11 +3874,11 @@ class Application(metaclass=ABCMeta):
 
     message_limit: int = 20
         Maximum number of messages passed to the logger.
-    """
+    '''
 
     @abstractmethod
     def main(self, control: Control, files: Sequence[str]) -> None:
-        """
+        '''
         Function to replace clingo's default main function.
 
         Parameters
@@ -3891,10 +3891,10 @@ class Application(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def register_options(self, options: ApplicationOptions) -> None:
-        """
+        '''
         Function to register custom options.
 
         Parameters
@@ -3905,10 +3905,10 @@ class Application(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def validate_options(self) -> bool:
-        """
+        '''
         Function to validate custom options.
 
         This function should return false or throw an exception if option
@@ -3917,10 +3917,10 @@ class Application(metaclass=ABCMeta):
         Returns
         -------
         bool
-        """
+        '''
 
     def print_model(self, model: Model, printer: Callable[[], None]) -> None:
-        """
+        '''
         Function to print additional information when the text output is used.
 
         Parameters
@@ -3933,10 +3933,10 @@ class Application(metaclass=ABCMeta):
         Returns
         -------
         None
-        """
+        '''
 
     def logger(self, code: MessageCode, message: str) -> None:
-        """
+        '''
         Function to intercept messages normally printed to standard error.
 
         By default, messages are printed to stdandard error.
@@ -3955,7 +3955,7 @@ class Application(metaclass=ABCMeta):
         Notes
         -----
         This function should not raise exceptions.
-        """
+        '''
 
 def clingo_main(application: Application, files: Iterable[str]=[]) -> int:
     '''

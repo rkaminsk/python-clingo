@@ -302,10 +302,10 @@ statement = Rule
 ```
 '''
 
-from typing import Any, Callable, Hashable, Iterable, List, Mapping, Set, Tuple
+from enum import Enum
+from typing import Any, Callable, ContextManager, Iterable, List, Mapping, Tuple
 from abc import ABCMeta
 
-from .types import Comparable, Lookup
 from . import Control, MessageCode
 
 def Aggregate(*args: Any, **kwargs: Any) -> Any:
@@ -545,7 +545,7 @@ class AST:
     this module. The parameters of the functions correspond to the nonterminals as
     given in the [grammar](.) above.
     '''
-    def __init__(self, type: ASTType, **arguments: Mapping[str,Any]):
+    def __init__(self, type_: ASTType, **arguments: Mapping[str,Any]):
         pass
 
     def items(self) -> List[Tuple[str,"AST"]]:
@@ -596,17 +596,9 @@ class AST:
 
     '''
 
-class AggregateFunction(Hashable, Comparable, metaclass=ABCMeta):
+class AggregateFunction(Enum):
     '''
     Enumeration of aggegate functions.
-
-    `AggregateFunction` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Implements: `Hashable`, `Comparable`.
 
     Attributes
     ----------
@@ -668,17 +660,9 @@ class BinaryOperator(metaclass=ABCMeta):
     # Power: BinaryOperator
     # XOr: BinaryOperator
 
-class ComparisonOperator(Hashable, Comparable, metaclass=ABCMeta):
+class ComparisonOperator(Enum):
     '''
     Enumeration of comparison operators.
-
-    `ComparisonOperator` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Implements: `Hashable`, `Comparable`.
 
     Attributes
     ----------
@@ -918,7 +902,7 @@ def parse_program(program: str, callback: Callable[[AST], None], logger: Callabl
     ProgramBuilder
     '''
 
-class ProgramBuilder(ContextManager['ProgramBuilder'], metaclass=ABCMeta):
+class ProgramBuilder(ContextManager['ProgramBuilder']):
     '''
     Object to build non-ground programs.
 
