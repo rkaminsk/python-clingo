@@ -97,7 +97,7 @@ def _str(f_size, f_str, *args):
     f_str(*args, p_str, p_size[0])
     return _ffi.string(p_str).decode()
 
-def _c_call(c_type, c_fun, *args):
+def _c_call(c_type, c_fun, *args, handler=None):
     '''
     Helper to simplify calling C functions where the last parameter is a
     reference to the return value.
@@ -106,17 +106,17 @@ def _c_call(c_type, c_fun, *args):
         p_ret = _ffi.new(f'{c_type}*')
     else:
         p_ret = c_type
-    _handle_error(c_fun(*args, p_ret))
+    _handle_error(c_fun(*args, p_ret), handler)
     return p_ret[0]
 
-def _c_call2(c_type1, c_type2, c_fun, *args):
+def _c_call2(c_type1, c_type2, c_fun, *args, handler=None):
     '''
     Helper to simplify calling C functions where the last two parameters are a
     reference to the return value.
     '''
     p_ret1 = _ffi.new(f'{c_type1}*')
     p_ret2 = _ffi.new(f'{c_type2}*')
-    _handle_error(c_fun(*args, p_ret1, p_ret2))
+    _handle_error(c_fun(*args, p_ret1, p_ret2), handler)
     return p_ret1[0], p_ret2[0]
 
 def _to_str(c_str) -> str:
@@ -305,12 +305,8 @@ class Symbol:
         '''
         The arguments of a function.
         '''
-        p_args = _ffi.new('clingo_symbol_t**')
-        size = _c_call('size_t', _lib.clingo_symbol_arguments, self._rep, p_args)
-        ret = []
-        for i in range(size):
-            ret.append(Symbol(p_args[0][i]))
-        return ret
+        args, size = _c_call2('clingo_symbol_t*', 'size_t', _lib.clingo_symbol_arguments, self._rep)
+        return [Symbol(args[i]) for i in range(size)]
 
     @property
     def name(self) -> str:
@@ -376,12 +372,12 @@ def Function(name: str, arguments: Sequence[Symbol]=[], positive: bool=True) -> 
     Symbol
     '''
     # pylint: disable=protected-access,invalid-name,dangerous-default-value
-    p_sym = _ffi.new('clingo_symbol_t*')
     c_args = _ffi.new('clingo_symbol_t[]', len(arguments))
     for i, arg in enumerate(arguments):
         c_args[i] = arg._rep
-    _handle_error(_lib.clingo_symbol_create_function(name.encode(), c_args, len(arguments), positive, p_sym))
-    return Symbol(p_sym[0])
+    sym = _c_call('clingo_symbol_t', _lib.clingo_symbol_create_function,
+                  name.encode(), c_args, len(arguments), positive)
+    return Symbol(sym)
 
 def Number(number: int) -> Symbol:
     '''
@@ -1256,12 +1252,9 @@ class SolveHandle:
         -------
         List[int]
         '''
-
-        p_core = _ffi.new('clingo_literal_t**')
-        p_size = _ffi.new('size_t*')
-        _handle_error(_lib.clingo_solve_handle_core(self._rep, p_core, p_size), self._handler)
-
-        return [p_core[0][i] for i in range(p_size[0])]
+        core, size = _c_call2('clingo_literal_t*', 'size_t', _lib.clingo_solve_handle_core,
+                              self._rep, handler=self._handler)
+        return [core[i] for i in range(size)]
 
     def get(self) -> SolveResult:
         '''
@@ -1274,9 +1267,8 @@ class SolveHandle:
         -------
         SolveResult
         '''
-        p_res = _ffi.new('clingo_solve_result_bitset_t*')
-        _handle_error(_lib.clingo_solve_handle_get(self._rep, p_res), self._handler)
-        return SolveResult(p_res[0])
+        res = _c_call('clingo_solve_result_bitset_t', _lib.clingo_solve_handle_get, self._rep, handler=self._handler)
+        return SolveResult(res)
 
     def model(self) -> Optional[Model]:
         '''
@@ -1673,7 +1665,7 @@ class PropagatorCheckMode(Enum):
     Off = _lib.clingo_propagator_check_mode_none
     Total = _lib.clingo_propagator_check_mode_total
 
-class PropagateInit(metaclass=ABCMeta):
+class PropagateInit:
     '''
     Object that is used to initialize a propagator before each solving step.
 
@@ -1681,13 +1673,16 @@ class PropagateInit(metaclass=ABCMeta):
     --------
     Control.register_propagator
     '''
-    def add_clause(self, clause: Iterable[int]) -> bool:
+    def __init__(self, rep):
+        self._rep = rep
+
+    def add_clause(self, clause: Sequence[int]) -> bool:
         '''
         Statically adds the given clause to the problem.
 
         Parameters
         ----------
-        clause : Iterable[int]
+        clause : Sequence[int]
             The clause over solver literals to add.
 
         Returns
@@ -1700,6 +1695,7 @@ class PropagateInit(metaclass=ABCMeta):
         If this function returns false, initialization should be stopped and no further
         functions of the `PropagateInit` and related objects should be called.
         '''
+        return _c_call('bool', _lib.cp.clingo_propagate_init_add_clause, self._rep, clause, len(clause))
 
     def add_literal(self, freeze: bool=True) -> int:
         '''
@@ -1723,6 +1719,7 @@ class PropagateInit(metaclass=ABCMeta):
         If literals are added to the solver, subsequent calls to `add_clause` and
         `propagate` are expensive. It is best to add literals in batches.
         '''
+        return _c_call('clingo_literal_t', _lib.clingo_propagate_init_add_literal, self._rep, freeze)
 
     def add_minimize(self, literal: int, weight: int, priority: int=0) -> None:
         '''
@@ -1737,6 +1734,7 @@ class PropagateInit(metaclass=ABCMeta):
         priority : int=0
             The priority of the literal.
         '''
+        _handle_error(_lib.cp.clingo_propagate_init_add_minimize(self._rep, literal, weight, priority))
 
     def add_watch(self, literal: int, thread_id: Optional[int]=None) -> None:
         '''
@@ -1754,8 +1752,12 @@ class PropagateInit(metaclass=ABCMeta):
         -------
         None
         '''
+        if thread_id is None:
+            _handle_error(_lib.clingo_propagate_init_add_watch(self._rep, literal))
+        else:
+            _handle_error(_lib.clingo_propagate_init_add_watch_to_thread(self._rep, literal, thread_id))
 
-    def add_weight_constraint(self, literal: int, literals: Iterable[Tuple[int,int]],
+    def add_weight_constraint(self, literal: int, literals: Sequence[Tuple[int,int]],
                               bound: int, type_: int=0, compare_equal: bool=False) -> bool:
         '''
         Statically adds a constraint of form
@@ -1772,7 +1774,7 @@ class PropagateInit(metaclass=ABCMeta):
         ----------
         literal : int
             The literal associated with the constraint.
-        literals : Iterable[Tuple[int,int]]
+        literals : Sequence[Tuple[int,int]]
             The weighted literals of the constrain.
         bound : int
             The bound of the constraint.
@@ -1791,6 +1793,8 @@ class PropagateInit(metaclass=ABCMeta):
         If this function returns false, initialization should be stopped and no further
         functions of the `PropagateInit` and related objects should be called.
         '''
+        return _c_call('bool', _lib.cp.clingo_propagate_init_add_weight_constraint,
+                       self._rep, literal, literals, len(literals), bound, type_, compare_equal)
 
     def propagate(self) -> bool:
         '''
@@ -1808,6 +1812,7 @@ class PropagateInit(metaclass=ABCMeta):
         If this function returns false, initialization should be stopped and no further
         functions of the `PropagateInit` and related objects should be called.
         '''
+        return _c_call('bool', _lib.clingo_propagate_init_propagate, self._rep)
 
     def solver_literal(self, literal: int) -> int:
         '''
@@ -1823,27 +1828,52 @@ class PropagateInit(metaclass=ABCMeta):
         int
             A solver literal.
         '''
+        return _c_call('clingo_literal_t', _lib.clingo_propagate_init_solver_literal, self._rep, literal)
 
-    assignment: Assignment
-    '''
-    `Assignment` object capturing the top level assignment.
-    '''
-    check_mode: PropagatorCheckMode
-    '''
-    `PropagatorCheckMode` controlling when to call `Propagator.check`.
-    '''
-    number_of_threads: int
-    '''
-    The number of solver threads used in the corresponding solve call.
-    '''
-    symbolic_atoms: SymbolicAtoms
-    '''
-    The symbolic atoms captured by a `SymbolicAtoms` object.
-    '''
-    theory_atoms: Iterator[TheoryAtom]
-    '''
-    An iterator over all theory atoms.
-    '''
+    @property
+    def assignment(self) -> Assignment:
+        '''
+        `Assignment` object capturing the top level assignment.
+        '''
+        return Assignment(_lib.clingo_propagate_init_assignment(self._rep))
+
+    @property
+    def check_mode(self) -> PropagatorCheckMode:
+        '''
+        `PropagatorCheckMode` controlling when to call `Propagator.check`.
+        '''
+        return PropagatorCheckMode(_lib.clingo_propagate_init_get_check_mode(self._rep))
+
+    @check_mode.setter
+    def check_mode(self, mode: PropagatorCheckMode) -> None:
+        _lib.clingo_propagate_init_set_check_mode(self._rep, mode.value)
+
+    @property
+    def number_of_threads(self) -> int:
+        '''
+        The number of solver threads used in the corresponding solve call.
+        '''
+        return _lib.clingo_propagate_init_number_of_threads(self._rep)
+
+    @property
+    def symbolic_atoms(self) -> SymbolicAtoms:
+        '''
+        The symbolic atoms captured by a `SymbolicAtoms` object.
+        '''
+        atoms = _c_call('clingo_symbolic_atoms_t*', _lib.clingo_propagate_init_symbolic_atoms, self._rep)
+        return SymbolicAtoms(atoms)
+
+    @property
+    def theory_atoms(self) -> Iterator[TheoryAtom]:
+        '''
+        An iterator over all theory atoms.
+        '''
+        atoms = _c_call('clingo_theory_atoms_t*', _lib.clingo_propagate_init_theory_atoms, self._rep)
+        size = _c_call('size_t', _lib.clingo_theory_atoms_size, atoms)
+
+        for idx in range(size):
+            yield TheoryAtom(atoms, idx)
+
 
 class PropagateControl(metaclass=ABCMeta):
     '''
@@ -3697,13 +3727,13 @@ class Control:
         if async_:
             mode |= _lib.clingo_solve_mode_async
 
-        p_handle = _ffi.new('clingo_solve_handle_t**')
-        _handle_error(_lib.clingo_control_solve(
-            self._rep, mode,
-            p_ass, len(assumptions),
-            _lib._clingo_solve_event_callback, self._handler,
-            p_handle), handler)
-        handle = SolveHandle(p_handle[0], handler)
+        handle = SolveHandle(
+            _c_call('clingo_solve_handle_t*', _lib.clingo_control_solve,
+                self._rep, mode,
+                p_ass, len(assumptions),
+                _lib._clingo_solve_event_callback, self._handler,
+                handler=handler),
+            handler)
 
         if not yield_ and not async_:
             with handle:
