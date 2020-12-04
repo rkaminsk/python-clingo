@@ -1350,19 +1350,44 @@ class SolveHandle:
         _lib.clingo_solve_handle_wait(self._rep, 0 if timeout is None else timeout, p_res)
         return p_res[0]
 
-# {{{1 propagators [5%]
+# {{{1 propagators [20%]
 
-class _Slice(Sequence[Value]):
+class _Slice:
+    '''
+    Wrapper for Python's slice that computes index ranges to slice sequences.
+
+    Currently, the range is recomputed each time. It is probably also possible
+    to combine the involved slices into one.
+    '''
+    def __init__(self, slc: slice, rec: Optional['_Slice']=None):
+        self._slc = slc
+        self._rec = rec
+
+    def rng(self, size):
+        '''
+        Return a range providing indices to access a sequence of length size.
+        '''
+        return (range(*self._slc.indices(size))
+                if self._rec is None else
+                self._rec.rng(size)[self._slc])
+
+class _SlicedSequence(Sequence[Value]):
     '''
     Helper to slice sequences.
     '''
-    def __init__(self, seq: Sequence[Value], slc: slice):
+    def __init__(self, seq: Sequence[Value], slc: _Slice):
         self._seq = seq
         self._slc = slc
+        self._len = -1
+        self._lst = None
 
     @property
     def _rng(self):
-        return range(*self._slc.indices(len(self._seq)))
+        size = len(self._seq)
+        if size != self._len:
+            self._lst = self._slc.rng(size)
+            self._len = size
+        return self._lst
 
     def __len__(self) -> int:
         return len(self._rng)
@@ -1373,7 +1398,7 @@ class _Slice(Sequence[Value]):
 
     def __getitem__(self, slc):
         if isinstance(slc, slice):
-            return _Slice(self, slc)
+            return _SlicedSequence(self._seq, _Slice(slc, self._slc))
         return self._seq[self._rng[slc]]
 
 class Trail(Sequence[int]):
@@ -1394,10 +1419,16 @@ class Trail(Sequence[int]):
 
     def __getitem__(self, slc):
         if isinstance(slc, slice):
-            return _Slice(self, slc)
+            return _SlicedSequence(self, _Slice(slc))
+        if slc < 0:
+            slc += len(self)
         if slc < 0 or slc >= len(self):
             raise IndexError('invalid index')
         return _c_call('clingo_literal_t', _lib.clingo_assignment_trail_at, self._rep, slc)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield _c_call('clingo_literal_t', _lib.clingo_assignment_trail_at, self._rep, i)
 
     def begin(self, level: int) -> int:
         '''
@@ -1431,7 +1462,7 @@ class Trail(Sequence[int]):
         '''
         return _c_call('uint32_t', _lib.clingo_assignment_trail_end, self._rep, level)
 
-class Assignment(Sequence[int], metaclass=ABCMeta):
+class Assignment(Sequence[int]):
     '''
     Object to inspect the (parital) assignment of an associated solver.
 
@@ -1441,13 +1472,28 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
 
     This class implements `Sequence[int]` to access the (positive)
     literals in the assignment.
-
-    Implements: `Sequence[int]`.
     '''
+    def __init__(self, rep):
+        self._rep = rep
+
+    def __len__(self):
+        return _c_call('uint32_t', _lib.clingo_assignment_size, self._rep)
+
+    def __getitem__(self, slc):
+        if isinstance(slc, slice):
+            return _SlicedSequence(self, _Slice(slc))
+        if slc < 0:
+            slc += len(self)
+        if slc < 0 or slc >= len(self):
+            raise IndexError('invalid index')
+        return _c_call('clingo_literal_t', _lib.clingo_assignment_at, self._rep, slc)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield _c_call('clingo_literal_t', _lib.clingo_assignment_at, self._rep, i)
+
     def decision(self, level: int) -> int:
         '''
-        decision(self, level: int) -> int
-
         Return the decision literal of the given level.
 
         Parameters
@@ -1459,11 +1505,10 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
         -------
         int
         '''
+        return _c_call('clingo_literal_t', _lib.clingo_assignment_decision, self._rep, level)
 
     def has_literal(self, literal : int) -> bool:
         '''
-        has_literal(self, literal : int) -> bool
-
         Determine if the given literal is valid in this solver.
 
         Parameters
@@ -1475,11 +1520,10 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
         -------
         bool
         '''
+        return _lib.clingo_assignment_has_literal(self._rep, literal)
 
     def is_false(self, literal: int) -> bool:
         '''
-        is_false(self, literal: int) -> bool
-
         Determine if the literal is false.
 
         Parameters
@@ -1491,11 +1535,10 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
         -------
         bool
         '''
+        return _c_call('bool', _lib.clingo_assignment_is_false, self._rep, literal)
 
     def is_fixed(self, literal: int) -> bool:
         '''
-        is_fixed(self, literal: int) -> bool
-
         Determine if the literal is assigned on the top level.
 
         Parameters
@@ -1507,6 +1550,7 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
         -------
         bool
         '''
+        return _c_call('bool', _lib.clingo_assignment_is_fixed, self._rep, literal)
 
     def is_true(self, literal: int) -> bool:
         '''
@@ -1523,6 +1567,7 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
         -------
         bool
         '''
+        return _c_call('bool', _lib.clingo_assignment_is_true, self._rep, literal)
 
     def level(self, literal: int) -> int:
         '''
@@ -1544,6 +1589,7 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
         Note that the returned value is only meaningful if the literal is assigned -
         i.e., `value(lit) is not None`.
         '''
+        return _c_call('uint32_t', _lib.clingo_assignment_level, self._rep, literal)
 
     def value(self, literal) -> Optional[bool]:
         '''
@@ -1560,37 +1606,48 @@ class Assignment(Sequence[int], metaclass=ABCMeta):
         -------
         Optional[bool]
         '''
+        value = _c_call('clingo_truth_value_t', _lib.clingo_assignment_truth_value, self._rep, literal)
+        if value == _lib.clingo_truth_value_true:
+            return True
+        if value == _lib.clingo_truth_value_false:
+            return False
+        assert value == _lib.clingo_truth_value_free
+        return None
 
-    decision_level: int
-    '''
-    decision_level: int
+    @property
+    def decision_level(self) -> int:
+        '''
+        The current decision level.
+        '''
+        return _lib.clingo_assignment_decision_level(self._rep)
 
-    The current decision level.
-    '''
-    has_conflict: bool
-    '''
-    has_conflict: bool
+    @property
+    def has_conflict(self) -> bool:
+        '''
+        True if the assignment is conflicting.
+        '''
+        return _lib.clingo_assignment_has_conflict(self._rep)
 
-    True if the assignment is conflicting.
-    '''
-    is_total: bool
-    '''
-    is_total: bool
+    @property
+    def is_total(self) -> bool:
+        '''
+        Whether the assignment is total.
+        '''
+        return _lib.clingo_assignment_is_total(self._rep)
 
-    Whether the assignment is total.
-    '''
-    root_level: int
-    '''
-    root_level: int
+    @property
+    def root_level(self) -> int:
+        '''
+        The current root level.
+        '''
+        return _lib.clingo_assignment_root_level(self._rep)
 
-    The current root level.
-    '''
-    trail: Trail
-    '''
-    trail: Trail
-
-    The trail of assigned literals.
-    '''
+    @property
+    def trail(self) -> Trail:
+        '''
+        The trail of assigned literals.
+        '''
+        return Trail(self._rep)
 
 class PropagatorCheckMode(Enum):
     '''
