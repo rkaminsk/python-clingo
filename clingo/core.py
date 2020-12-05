@@ -1,18 +1,21 @@
 '''
 This modules defines core functionality used throught the clingo module.
 '''
+
+from typing import Tuple
 from enum import Enum
 
 from ._internal import _cb_error_panic, _ffi, _lib
 
-def _clingo_version():
+def version() -> Tuple[int, int, int]:
+    '''
+    Return clingo's version as a tuple `(major, minor, revision)`.
+    '''
     p_major = _ffi.new('int*')
     p_minor = _ffi.new('int*')
     p_revision = _ffi.new('int*')
     _lib.clingo_version(p_major, p_minor, p_revision)
-    return f"{p_major[0]}.{p_minor[0]}.{p_revision[0]}"
-
-__version__: str = _clingo_version()
+    return p_major[0], p_minor[0], p_revision[0]
 
 class MessageCode(Enum):
     '''

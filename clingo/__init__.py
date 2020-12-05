@@ -76,3 +76,5 @@ from .configuration import *
 from .statistics import *
 from .control import *
 from .application import *
+
+__version__ = '.'.join(map(str, version()))
