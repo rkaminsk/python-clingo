@@ -2201,44 +2201,43 @@ class Propagator(metaclass=ABCMeta):
         used.
         '''
 
-'''
-cnt.append('extern "Python" bool _clingo_propagator_init(clingo_propagate_init_t *init, void *data);')
-cnt.append('extern "Python" bool _clingo_propagator_propagate(clingo_propagate_control_t *control, clingo_literal_t const *changes, size_t size, void *data);')
-cnt.append('extern "Python" void _clingo_propagator_undo(clingo_propagate_control_t const *control, clingo_literal_t const *changes, size_t size, void *data);')
-cnt.append('extern "Python" bool _clingo_propagator_check(clingo_propagate_control_t *control, void *data);')
-cnt.append('extern "Python" bool _clingo_propagator_decide(clingo_id_t thread_id, clingo_assignment_t const *assignment, clingo_literal_t fallback, void *data, clingo_literal_t *decision);')
-'''
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_propagator_init(init, data):
-    pass
+    propagator = _ffi.from_handle(data).data
+    propagator.init(PropagateInit(init))
+    return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_propagator_propagate(control, changes, size, data):
-    pass
+    propagator = _ffi.from_handle(data).data
+    py_changes = [changes[i] for i in range(size)]
+    propagator.propagate(PropagateControl(control), py_changes)
+    return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_propagator_undo(control, changes, size, data):
-    pass
+    propagator = _ffi.from_handle(data).data
+    py_changes = [changes[i] for i in range(size)]
+    ctl = PropagateControl(control)
+    propagator.undo(ctl.thread_id, ctl.assignment, py_changes)
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_propagator_check(control, data):
-    pass
+    propagator = _ffi.from_handle(data).data
+    propagator.check(PropagateControl(control))
+    return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_propagator_decide(thread_id, assignment, fallback, data, decision):
-    pass
+    propagator = _ffi.from_handle(data).data
+    decision[0] = propagator.decide(thread_id, Assignment(assignment), fallback)
+    return True
 
 # {{{1 ground program inspection/building [0%]
 
 class HeuristicType(Enum):
     '''
     Enumeration of the different heuristic types.
-
-    `HeuristicType` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes  are available:
 
     Attributes
     ----------
@@ -2255,12 +2254,12 @@ class HeuristicType(Enum):
     False_ : HeuristicType
         Heuristic modification to make an atom false.
     '''
-    # Factor: HeuristicType
-    # False_: HeuristicType
-    # Init: HeuristicType
-    # Level: HeuristicType
-    # Sign: HeuristicType
-    # True_: HeuristicType
+    Factor = _lib.clingo_heuristic_type_factor
+    False_ = _lib.clingo_heuristic_type_false
+    Init = _lib.clingo_heuristic_type_init
+    Level = _lib.clingo_heuristic_type_level
+    Sign = _lib.clingo_heuristic_type_sign
+    True_ = _lib.clingo_heuristic_type_true
 
 class Observer(metaclass=ABCMeta):
     '''
@@ -2621,13 +2620,11 @@ class Observer(metaclass=ABCMeta):
         None
         '''
 
-class Backend(ContextManager['Backend'], metaclass=ABCMeta):
+class Backend(ContextManager['Backend']):
     '''
     Backend object providing a low level interface to extend a logic program.
 
     This class allows for adding statements in ASPIF format.
-
-    Implements: `ContextManager[Backend]`.
 
     See Also
     --------
@@ -3315,9 +3312,7 @@ def _clingo_ground_callback(location, name, arguments, arguments_size, data, sym
     # pylint: disable=protected-access,unused-argument
     context = _ffi.from_handle(data).data
     py_name = _ffi.string(name).decode()
-    fun = getattr(context if hasattr(context, py_name) else
-                  sys.modules['__main__'],
-                  py_name)
+    fun = getattr(sys.modules['__main__'] if context is None else context, py_name)
 
     args = []
     for i in range(arguments_size):
@@ -3545,13 +3540,8 @@ class Control:
         '''
         # pylint: disable=protected-access,dangerous-default-value
         self._error.clear()
-        handler = None
-        c_handler = _ffi.NULL
-        c_cb = _ffi.NULL
-        if context is not None:
-            handler = _CBData(context, self._error)
-            c_handler = _ffi.new_handle(handler)
-            c_cb = _lib._clingo_ground_callback
+        handler = _CBData(context, self._error)
+        c_handler = _ffi.new_handle(handler)
 
         c_mem = []
         c_parts = _ffi.new("clingo_part_t[]", len(parts))
@@ -3565,7 +3555,7 @@ class Control:
             c_part.size = len(part[1])
 
         _handle_error(_lib.clingo_control_ground(
-            self._rep, c_parts, len(parts), c_cb, c_handler), handler)
+            self._rep, c_parts, len(parts), _lib._clingo_ground_callback, c_handler), handler)
 
     def interrupt(self) -> None:
         '''
