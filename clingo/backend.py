@@ -2,11 +2,11 @@
 This module contains functions and classes to inspect or add ground statements.
 '''
 
-from typing import ContextManager, Iterable, Sequence, Optional, Tuple
+from typing import ContextManager, Sequence, Optional, Tuple
 from enum import Enum
 from abc import ABCMeta
 
-from ._internal import _lib
+from ._internal import _Error, _c_call, _cb_error_handler, _ffi, _handle_error, _lib, _to_str
 from .core import TruthValue
 from .symbol import Symbol
 
@@ -395,6 +395,140 @@ class Observer(metaclass=ABCMeta):
         None
         '''
 
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_init_program(incremental, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.init_program(incremental)
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_begin_step(data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.begin_step()
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_end_step(data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.end_step()
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_rule(choice, head, head_size, body, body_size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.rule(
+        choice,
+        [ head[i] for i in range(head_size) ],
+        [ body[i] for i in range(body_size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_weight_rule(choice, head, head_size, lower_bound, body, body_size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.weight_rule(
+        choice,
+        [ head[i] for i in range(head_size) ],
+        lower_bound,
+        [ (body[i].literal, body[i].weight) for i in range(body_size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_minimize(priority, literals, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.minimize(priority, [ (literals[i].literal, literals[i].weight) for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_project(atoms, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.project([ atoms[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_output_atom(symbol, atom, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.output_atom(Symbol(symbol), atom)
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_output_term(symbol, condition, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.output_term(Symbol(symbol), [ condition[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_output_csp(symbol, value, condition, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.output_csp(Symbol(symbol), value, [ condition[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_external(atom, type_, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.external(atom, TruthValue(type_))
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_assume(literals, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.assume([ literals[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_heuristic(atom, type_, bias, priority, condition, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.heuristic(atom, HeuristicType(type_), bias, priority, [ condition[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_acyc_edge(node_u, node_v, condition, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.acyc_edge(node_u, node_v, [ condition[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_theory_term_number(term_id, number, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.theory_term_number(term_id, number)
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_theory_term_string(term_id, name, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.theory_term_string(term_id, _to_str(name))
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_theory_term_compound(term_id, name_id_or_type, arguments, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.theory_term_compound(term_id, name_id_or_type, [ arguments[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_theory_element(element_id, terms, terms_size, condition, condition_size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.theory_element(
+        element_id,
+        [ terms[i] for i in range(terms_size) ],
+        [ condition[i] for i in range(condition_size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_theory_atom(atom_id_or_zero, term_id, elements, size, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.theory_atom(atom_id_or_zero, term_id, [ elements[i] for i in range(size) ])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_observer_theory_atom_with_guard(atom_id_or_zero, term_id, elements, size,
+                                            operator_id, right_hand_side_id, data):
+    observer: Observer = _ffi.from_handle(data).data
+    observer.theory_atom_with_guard(
+        atom_id_or_zero, term_id,
+        [ elements[i] for i in range(size) ],
+        operator_id, right_hand_side_id)
+    return True
+
 class Backend(ContextManager['Backend']):
     '''
     Backend object providing a low level interface to extend a logic program.
@@ -427,10 +561,21 @@ class Backend(ContextManager['Backend']):
         Answer: a
         SAT
     '''
-    def __init__(self, rep):
+    def __init__(self, rep, error: _Error):
         self._rep = rep
+        self._error = error
 
-    def add_acyc_edge(self, node_u: int, node_v: int, condition: Iterable[int]) -> None:
+    def __enter__(self):
+        self._error.clear()
+        _handle_error(_lib.clingo_backend_begin(self._rep), handler=self._error)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._error.clear()
+        _handle_error(_lib.clingo_backend_end(self._rep), handler=self._error)
+        return False
+
+    def add_acyc_edge(self, node_u: int, node_v: int, condition: Sequence[int]) -> None:
         '''
         Add an edge directive to the program.
 
@@ -440,29 +585,31 @@ class Backend(ContextManager['Backend']):
             The start node represented as an unsigned integer.
         node_v : int
             The end node represented as an unsigned integer.
-        condition : Iterable[int]
+        condition : Sequence[int]
             List of program literals.
 
         Returns
         -------
         None
         '''
+        _handle_error(_lib.clingo_backend_acyc_edge(self._rep, node_u, node_v, condition, len(condition)))
 
-    def add_assume(self, literals: Iterable[int]) -> None:
+    def add_assume(self, literals: Sequence[int]) -> None:
         '''
         Add assumptions to the program.
 
         Parameters
         ----------
-        literals : Iterable[int]
+        literals : Sequence[int]
             The list of literals to assume true.
 
         Returns
         -------
         None
         '''
+        _handle_error(_lib.clingo_backend_assume(self._rep, literals, len(literals)))
 
-    def add_atom(self, symbol : Optional[Symbol]=None) -> int:
+    def add_atom(self, symbol: Optional[Symbol]=None) -> int:
         '''
         Return a fresh program atom or the atom associated with the given symbol.
 
@@ -479,6 +626,14 @@ class Backend(ContextManager['Backend']):
         int
             The program atom representing the atom.
         '''
+        # pylint: disable=protected-access
+        if symbol is None:
+            p_sym = _ffi.NULL
+        else:
+            p_sym = _ffi.new('clingo_symbol_t*', symbol._rep)
+
+        self._error.clear()
+        return _c_call('clingo_atom_t', _lib.clingo_backend_add_atom, self._rep, p_sym, handler=self._error)
 
     def add_external(self, atom : int, value : TruthValue=TruthValue.False_) -> None:
         '''
@@ -499,9 +654,10 @@ class Backend(ContextManager['Backend']):
         -----
         Can also be used to release an external atom using `TruthValue.Release`.
         '''
+        _handle_error(_lib.clingo_backend_external(self._rep, atom, value.value))
 
     def add_heuristic(self, atom: int, type_: HeuristicType, bias: int, priority: int,
-                      condition: Iterable[int]) -> None:
+                      condition: Sequence[int]) -> None:
         '''
         Add a heuristic directive to the program.
 
@@ -515,15 +671,17 @@ class Backend(ContextManager['Backend']):
             A signed integer.
         priority : int
             An unsigned integer.
-        condition : Iterable[int]
+        condition : Sequence[int]
             List of program literals.
 
         Returns
         -------
         None
         '''
+        _handle_error(_lib.clingo_backend_heuristic(self._rep, atom, type_.value, bias, priority,
+                      condition, len(condition)))
 
-    def add_minimize(self, priority: int, literals: Iterable[Tuple[int,int]]) -> None:
+    def add_minimize(self, priority: int, literals: Sequence[Tuple[int,int]]) -> None:
         '''
         Add a minimize constraint to the program.
 
@@ -531,37 +689,39 @@ class Backend(ContextManager['Backend']):
         ----------
         priority : int
             Integer for the priority.
-        literals : Iterable[Tuple[int,int]]
+        literals : Sequence[Tuple[int,int]]
             List of pairs of program literals and weights.
 
         Returns
         -------
         None
         '''
+        _handle_error(_lib.clingo_backend_minimize(self._rep, priority, literals, len(literals)))
 
-    def add_project(self, atoms: Iterable[int]) -> None:
+    def add_project(self, atoms: Sequence[int]) -> None:
         '''
         Add a project statement to the program.
 
         Parameters
         ----------
-        atoms : Iterable[int]
+        atoms : Sequence[int]
             List of program atoms to project on.
 
         Returns
         -------
         None
         '''
+        _handle_error(_lib.clingo_backend_project(self._rep, atoms, len(atoms)))
 
-    def add_rule(self, head: Iterable[int], body: Iterable[int]=[], choice: bool=False) -> None:
+    def add_rule(self, head: Sequence[int], body: Sequence[int]=[], choice: bool=False) -> None:
         '''
         Add a disjuntive or choice rule to the program.
 
         Parameters
         ----------
-        head : Iterable[int]
+        head : Sequence[int]
             The program atoms forming the rule head.
-        body : Iterable[int]=[]
+        body : Sequence[int]=[]
             The program literals forming the rule body.
         choice : bool=False
             Whether to add a disjunctive or choice rule.
@@ -575,10 +735,10 @@ class Backend(ContextManager['Backend']):
         Integrity constraints and normal rules can be added by using an empty or
         singleton head list, respectively.
         '''
-        # pylint: disable=dangerous-default-value,unnecessary-pass
-        pass
+        # pylint: disable=dangerous-default-value
+        _handle_error(_lib.clingo_backend_rule(self._rep, choice, head, len(head), body, len(body)))
 
-    def add_weight_rule(self, head: Iterable[int], lower: int, body: Iterable[Tuple[int,int]],
+    def add_weight_rule(self, head: Sequence[int], lower: int, body: Sequence[Tuple[int,int]],
                         choice: bool=False) -> None:
         '''
         Add a disjuntive or choice rule with one weight constraint with a lower bound
@@ -586,11 +746,11 @@ class Backend(ContextManager['Backend']):
 
         Parameters
         ----------
-        head : Iterable[int]
+        head : Sequence[int]
             The program atoms forming the rule head.
         lower : int
             The lower bound.
-        body : Iterable[Tuple[int,int]]
+        body : Sequence[Tuple[int,int]]
             The pairs of program literals and weights forming the elements of the
             weight constraint.
         choice : bool=False
@@ -600,3 +760,4 @@ class Backend(ContextManager['Backend']):
         -------
         None
         '''
+        _handle_error(_lib.clingo_backend_weight_rule(self._rep, choice, head, len(head), lower, body, len(body)))

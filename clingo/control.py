@@ -214,7 +214,7 @@ class Control:
         -------
         Backend
         '''
-        return Backend(_c_call('clingo_backend_t*', _lib.clingo_control_backend, self._rep))
+        return Backend(_c_call('clingo_backend_t*', _lib.clingo_control_backend, self._rep), self._error)
 
     def cleanup(self) -> None:
         '''
@@ -370,7 +370,31 @@ class Control:
         Not all functions the `Observer` interface have to be implemented and can be
         omitted if not needed.
         '''
-        raise RuntimeError('implement me!!!')
+        # pylint: disable=protected-access,line-too-long
+        c_observer = _ffi.new('clingo_ground_program_observer_t*', (
+            _lib._clingo_observer_init_program if _overwritten(Observer, observer, "init_program") else _ffi.NULL,
+            _lib._clingo_observer_begin_step if _overwritten(Observer, observer, "begin_step") else _ffi.NULL,
+            _lib._clingo_observer_end_step if _overwritten(Observer, observer, "end_step") else _ffi.NULL,
+            _lib._clingo_observer_rule if _overwritten(Observer, observer, "rule") else _ffi.NULL,
+            _lib._clingo_observer_weight_rule if _overwritten(Observer, observer, "weight_rule") else _ffi.NULL,
+            _lib._clingo_observer_minimize if _overwritten(Observer, observer, "minimize") else _ffi.NULL,
+            _lib._clingo_observer_project if _overwritten(Observer, observer, "project") else _ffi.NULL,
+            _lib._clingo_observer_output_atom if _overwritten(Observer, observer, "output_atom") else _ffi.NULL,
+            _lib._clingo_observer_output_term if _overwritten(Observer, observer, "output_term") else _ffi.NULL,
+            _lib._clingo_observer_output_csp if _overwritten(Observer, observer, "output_csp") else _ffi.NULL,
+            _lib._clingo_observer_external if _overwritten(Observer, observer, "external") else _ffi.NULL,
+            _lib._clingo_observer_assume if _overwritten(Observer, observer, "assume") else _ffi.NULL,
+            _lib._clingo_observer_heuristic if _overwritten(Observer, observer, "heuristic") else _ffi.NULL,
+            _lib._clingo_observer_acyc_edge if _overwritten(Observer, observer, "acyc_edge") else _ffi.NULL,
+            _lib._clingo_observer_theory_term_number if _overwritten(Observer, observer, "theory_term_number") else _ffi.NULL,
+            _lib._clingo_observer_theory_term_string if _overwritten(Observer, observer, "theory_term_string") else _ffi.NULL,
+            _lib._clingo_observer_theory_term_compound if _overwritten(Observer, observer, "theory_term_compound") else _ffi.NULL,
+            _lib._clingo_observer_theory_element if _overwritten(Observer, observer, "theory_element") else _ffi.NULL,
+            _lib._clingo_observer_theory_atom if _overwritten(Observer, observer, "theory_atom") else _ffi.NULL,
+            _lib._clingo_observer_theory_atom_with_guard if _overwritten(Observer, observer, "theory_atom_with_guard") else _ffi.NULL))
+        c_data = _ffi.new_handle(_CBData(observer, self._error))
+        self._mem.append(c_data)
+        _handle_error(_lib.clingo_control_register_observer(self._rep, c_observer, replace, c_data))
 
     def register_propagator(self, propagator: Propagator) -> None:
         '''

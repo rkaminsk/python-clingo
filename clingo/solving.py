@@ -387,6 +387,7 @@ class SolveHandle:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         _handle_error(_lib.clingo_solve_handle_close(self._rep), self._handler)
+        return False
 
     def cancel(self) -> None:
         '''

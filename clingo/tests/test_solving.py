@@ -30,7 +30,7 @@ class _MCB:
     def models(self):
         return sorted(self._models)
 
-class TestSymbol(TestCase):
+class TestSolving(TestCase):
     '''
     Tests basic solving and related functions.
     '''

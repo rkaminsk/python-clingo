@@ -70,7 +70,7 @@ class TruthValue(Enum):
     Release : TruthValue
         Indicates that an atom is to be released.
     '''
-    False_ = _lib.clingo_truth_value_false
-    Free = _lib.clingo_truth_value_free
-    True_ = _lib.clingo_truth_value_true
-    Release = 3
+    False_ = _lib.clingo_external_type_false
+    Free = _lib.clingo_external_type_free
+    True_ = _lib.clingo_external_type_true
+    Release = _lib.clingo_external_type_release
