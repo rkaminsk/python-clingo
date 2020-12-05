@@ -1512,7 +1512,7 @@ class Assignment(Sequence[int]):
         self._rep = rep
 
     def __len__(self):
-        return _c_call('uint32_t', _lib.clingo_assignment_size, self._rep)
+        return _lib.clingo_assignment_size(self._rep)
 
     def __getitem__(self, slc):
         if isinstance(slc, slice):
@@ -1533,8 +1533,8 @@ class Assignment(Sequence[int]):
 
         Parameters
         ----------
-        literal : int
-            The solver literal.
+        level : int
+            The decision level.
 
         Returns
         -------
@@ -1601,6 +1601,22 @@ class Assignment(Sequence[int]):
         bool
         '''
         return _c_call('bool', _lib.clingo_assignment_is_true, self._rep, literal)
+
+    def is_free(self, literal: int) -> bool:
+        '''
+        Determine if the literal is free.
+
+        Parameters
+        ----------
+        literal : int
+            The solver literal.
+
+        Returns
+        -------
+        bool
+        '''
+        value = _c_call('clingo_truth_value_t', _lib.clingo_assignment_truth_value, self._rep, literal)
+        return value == _lib.clingo_truth_value_free
 
     def level(self, literal: int) -> int:
         '''
@@ -1732,7 +1748,7 @@ class PropagateInit:
         If this function returns false, initialization should be stopped and no further
         functions of the `PropagateInit` and related objects should be called.
         '''
-        return _c_call('bool', _lib.cp.clingo_propagate_init_add_clause, self._rep, clause, len(clause))
+        return _c_call('bool', _lib.clingo_propagate_init_add_clause, self._rep, clause, len(clause))
 
     def add_literal(self, freeze: bool=True) -> int:
         '''
@@ -1771,7 +1787,7 @@ class PropagateInit:
         priority : int=0
             The priority of the literal.
         '''
-        _handle_error(_lib.cp.clingo_propagate_init_add_minimize(self._rep, literal, weight, priority))
+        _handle_error(_lib.clingo_propagate_init_add_minimize(self._rep, literal, weight, priority))
 
     def add_watch(self, literal: int, thread_id: Optional[int]=None) -> None:
         '''
@@ -1830,7 +1846,7 @@ class PropagateInit:
         If this function returns false, initialization should be stopped and no further
         functions of the `PropagateInit` and related objects should be called.
         '''
-        return _c_call('bool', _lib.cp.clingo_propagate_init_add_weight_constraint,
+        return _c_call('bool', _lib.clingo_propagate_init_add_weight_constraint,
                        self._rep, literal, literals, len(literals), bound, type_, compare_equal)
 
     def propagate(self) -> bool:
@@ -2216,6 +2232,9 @@ def _clingo_propagator_decide(thread_id, assignment, fallback, data, decision):
     propagator = _ffi.from_handle(data).data
     decision[0] = propagator.decide(thread_id, Assignment(assignment), fallback)
     return True
+
+def _overwritten(base, obj, function):
+    return hasattr(obj, function) and getattr(base, function) is not getattr(obj.__class__, function)
 
 # {{{1 ground program inspection/building [0%]
 
@@ -3625,12 +3644,13 @@ class Control:
         Not all functions of the `Propagator` interface have to be implemented and can
         be omitted if not needed.
         '''
-        c_propagator = _ffi.new('clingo_propagator_t', (
-            _clingo_propagator_init if hasattr(propagator, "init") else _ffi.NULL,
-            _clingo_propagator_propagate if hasattr(propagator, "propagate") else _ffi.NULL,
-            _clingo_propagator_undo if hasattr(propagator, "undo") else _ffi.NULL,
-            _clingo_propagator_check if hasattr(propagator, "check") else _ffi.NULL,
-            _clingo_propagator_decide if hasattr(propagator, "decide") else _ffi.NULL))
+        # pylint: disable=protected-access
+        c_propagator = _ffi.new('clingo_propagator_t*', (
+            _lib._clingo_propagator_init if _overwritten(Propagator, propagator, "init") else _ffi.NULL,
+            _lib._clingo_propagator_propagate if _overwritten(Propagator, propagator, "propagate") else _ffi.NULL,
+            _lib._clingo_propagator_undo if _overwritten(Propagator, propagator, "undo") else _ffi.NULL,
+            _lib._clingo_propagator_check if _overwritten(Propagator, propagator, "check") else _ffi.NULL,
+            _lib._clingo_propagator_decide if _overwritten(Propagator, propagator, "decide") else _ffi.NULL))
         c_data = _ffi.new_handle(_CBData(propagator, self._error))
         self._mem.append(c_data)
         _handle_error(_lib.clingo_control_register_propagator(self._rep, c_propagator, c_data, False))
