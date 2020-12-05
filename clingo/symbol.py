@@ -51,6 +51,8 @@ class Symbol:
     functions `Number`, `String`, and `Function` to construct symbol objects or the
     preconstructed symbols `Infimum` and `Supremum`.
     '''
+    __slots__ = ('_rep',)
+
     def __init__(self, rep):
         self._rep = rep
 
