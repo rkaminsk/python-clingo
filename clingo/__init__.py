@@ -1071,8 +1071,6 @@ class Model:
 
     def contains(self, atom: Symbol) -> bool:
         '''
-        contains(self, atom: Symbol) -> bool
-
         Efficiently check if an atom is contained in the model.
 
         Parameters
@@ -1118,8 +1116,6 @@ class Model:
 
     def is_true(self, literal: int) -> bool:
         '''
-        is_true(self, literal: int) -> bool
-
         Check if the given program literal is true.
 
         Parameters
@@ -1325,8 +1321,6 @@ class SolveHandle:
 
     def model(self) -> Optional[Model]:
         '''
-        model(self) -> Optional[Model]
-
         Get the current model if there is any.
 
         Examples
@@ -1363,8 +1357,6 @@ class SolveHandle:
 
     def resume(self) -> None:
         '''
-        resume(self) -> None
-
         Discards the last model and starts searching for the next one.
 
         Notes
@@ -1376,8 +1368,6 @@ class SolveHandle:
 
     def wait(self, timeout: Optional[float]=None) -> bool:
         '''
-        wait(self, timeout: Optional[float]=None) -> bool
-
         Wait for solve call to finish or the next result with an optional timeout.
 
         Parameters
@@ -1599,8 +1589,6 @@ class Assignment(Sequence[int]):
 
     def is_true(self, literal: int) -> bool:
         '''
-        is_true(self, literal: int) -> bool
-
         Determine if the literal is true.
 
         Parameters
@@ -1616,8 +1604,6 @@ class Assignment(Sequence[int]):
 
     def level(self, literal: int) -> int:
         '''
-        level(self, literal: int) -> int
-
         The decision level of the given literal.
 
         Parameters
@@ -1638,8 +1624,6 @@ class Assignment(Sequence[int]):
 
     def value(self, literal) -> Optional[bool]:
         '''
-        value(self, literal) -> Optional[bool]
-
         Get the truth value of the given literal or `None` if it has none.
 
         Parameters
@@ -4043,8 +4027,6 @@ class ApplicationOptions(metaclass=ABCMeta):
 
     def add_flag(self, group: str, option: str, description: str, target: Flag) -> None:
         '''
-        add_flag(self, group: str, option: str, description: str, target: Flag) -> None
-
         Add an option that is a simple flag.
 
         This function is similar to `ApplicationOptions.add` but simpler because
@@ -4164,8 +4146,6 @@ class Application(metaclass=ABCMeta):
 
 def clingo_main(application: Application, files: Iterable[str]=[]) -> int:
     '''
-    clingo_main(application: Application, files: Iterable[str]=[]) -> int
-
     Runs the given application using clingo's default output and signal handling.
 
     The application can overwrite clingo's default behaviour by registering
