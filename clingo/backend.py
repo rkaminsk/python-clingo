@@ -403,7 +403,7 @@ class Backend(ContextManager['Backend']):
 
     See Also
     --------
-    Control.backend
+    clingo.control.Control.backend
 
     Notes
     -----

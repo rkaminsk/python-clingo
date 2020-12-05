@@ -223,7 +223,7 @@ def Tuple_(arguments: Sequence[Symbol]) -> Symbol:
 
     See Also
     --------
-    clingo.Function
+    Function
     '''
     # pylint: disable=invalid-name
     return Function("", arguments)

@@ -1,6 +1,6 @@
 '''
-This modules provides the `Control` class responsible for controling grounding
-and solving.
+This modules provides the `clingo.control.Control` class responsible for
+controling grounding and solving.
 '''
 
 from typing import Any, Callable, Iterator, Optional, Sequence, Tuple, Union, cast
@@ -182,7 +182,8 @@ class Control:
 
         See Also
         --------
-        Control.release_external, SolveControl.symbolic_atoms, SymbolicAtom.is_external
+        Control.release_external, clingo.solving.SolveControl.symbolic_atoms,
+        clingo.symbolic_atoms.SymbolicAtom.is_external
 
         Notes
         -----
@@ -471,39 +472,41 @@ class Control:
             that contain atom `a`.
         on_model : Callable[[Model],Optional[bool]]=None
             Optional callback for intercepting models.
-            A `Model` object is passed to the callback.
-            The search can be interruped from the model callback by
-            returning False.
+            A `clingo.solving.Model` object is passed to the callback. The
+            search can be interruped from the model callback by returning
+            False.
         on_statistics : Callable[[StatisticsMap,StatisticsMap],None]=None
             Optional callback to update statistics.
             The step and accumulated statistics are passed as arguments.
         on_finish : Callable[[SolveResult],None]=None
             Optional callback called once search has finished.
-            A `SolveResult` also indicating whether the solve call has been intrrupted
-            is passed to the callback.
+            A `clingo.solving.SolveResult` also indicating whether the solve
+            call has been intrrupted is passed to the callback.
         on_core : Callable[[Sequence[int]],None]=None
             Optional callback called with the assumptions that made a problem
             unsatisfiable.
         yield_ : bool=False
-            The resulting `SolveHandle` is iterable yielding `Model` objects.
+            The resulting `clingo.solving.SolveHandle` is iterable yielding
+            `clingo.solving.Model` objects.
         async_ : bool=False
-            The solve call and the method `SolveHandle.resume` of the returned handle
-            are non-blocking.
+            The solve call and the method `clingo.solving.SolveHandle.resume`
+            of the returned handle are non-blocking.
 
         Returns
         -------
         Union[SolveHandle,SolveResult]
             The return value depends on the parameters. If either `yield_` or `async_`
-            is true, then a handle is returned. Otherwise, a `SolveResult` is returned.
+            is true, then a handle is returned. Otherwise, a
+            `clingo.solving.SolveResult` is returned.
 
         Notes
         -----
-        If neither `yield_` nor `async_` is set, the function returns a SolveResult right
-        away.
+        If neither `yield_` nor `async_` is set, the function returns a
+        `clingo.solving.SolveResult` right away.
 
-        Note that in gringo or in clingo with lparse or text output enabled this
-        function just grounds and returns a SolveResult where `SolveResult.unknown`
-        is true.
+        Note that in gringo or in clingo with lparse or text output enabled
+        this function just grounds and returns a `clingo.solving.SolveResult`
+        where `clingo.solving.SolveResult.unknown` is true.
 
         If this function is used in embedded Python code, you might want to start
         clingo using the `--outf=3` option to disable all output from clingo.
@@ -513,8 +516,8 @@ class Control:
         another thread. To ensure that the methods can be called, make sure to not use
         any functions that block Python's GIL indefinitely.
 
-        This function as well as blocking functions on the `SolveHandle` release the GIL
-        but are not thread-safe.
+        This function as well as blocking functions on the
+        `clingo.solving.SolveHandle` release the GIL but are not thread-safe.
 
         Examples
         --------
@@ -603,7 +606,7 @@ class Control:
     @property
     def configuration(self) -> Configuration:
         '''
-        `Configuration` object to change the configuration.
+        Object to change the configuration.
         '''
         conf = _c_call('clingo_configuration_t*', _lib.clingo_control_configuration, self._rep)
         key = _c_call('clingo_id_t', _lib.clingo_configuration_root, conf)
@@ -629,7 +632,7 @@ class Control:
         clasp's various enumeration modes is removed after a solve call. This includes
         enumeration of cautious or brave consequences, enumeration of answer sets with
         or without projection, or finding optimal models; as well as clauses added with
-        `SolveControl.add_clause`.
+        `clingo.solving.SolveControl.add_clause`.
 
         Notes
         -----

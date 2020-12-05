@@ -40,7 +40,7 @@ class Configuration:
         >>> import clingo
         >>> prg = clingo.Control()
         >>> prg.configuration.solve.description("models")
-        'Compute at most %A models (0 for all)\n'
+        'Compute at most %A models (0 for all)'
         >>> prg.configuration.solve.models = 0
         >>> prg.add("base", [], "{a;b}.")
         >>> prg.ground([("base", [])])
