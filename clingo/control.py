@@ -3,10 +3,11 @@ This modules provides the `clingo.control.Control` class responsible for
 controling grounding and solving.
 '''
 
-from typing import Any, Callable, Iterator, Optional, Sequence, Tuple, Union, cast
+from typing import Any, Callable, Iterator, Optional, Sequence, Tuple, Union, cast, overload
+from collections import abc
 import sys
 
-from ._internal import _CBData, _Error, _cb_error_handler, _c_call, _ffi, _handle_error, _lib
+from ._internal import _CBData, _Error, _cb_error_handler, _c_call, _ffi, _handle_error, _lib, _overwritten
 from .core import MessageCode
 from .symbol import Symbol
 from .symbolic_atoms import SymbolicAtoms
@@ -82,9 +83,6 @@ def _clingo_ground_callback(location, name, arguments, arguments_size, data, sym
 
     return True
 
-def _overwritten(base, obj, function):
-    return hasattr(obj, function) and getattr(base, function) is not getattr(obj.__class__, function)
-
 class Control:
     '''
     Control object for the grounding/solving process.
@@ -103,32 +101,48 @@ class Control:
     Note that only gringo options (without `--text`) and clasp's search options are
     supported. Furthermore, a `Control` object is blocked while a search call is
     active; you must not call any member function during search.
+
+    The second overload is for internal purposes.
     '''
-    def __init__(self, arguments: Sequence[str]=[],
+    @overload
+    def __init__(self, arguments: Union[Sequence[str],Any]=[],
                  logger: Callable[[MessageCode,str],None]=None, message_limit: int=20):
+        # pylint: disable=dangerous-default-value
+        ...
+    @overload
+    def __init__(self, rep: Any):
+        ...
+    def __init__(self, arguments=[], logger=None, message_limit=20):
         # pylint: disable=protected-access,dangerous-default-value
+        self._free = False
         self._mem = []
-        if logger is not None:
-            c_handle = _ffi.new_handle(logger)
-            c_cb = _lib._clingo_logger_callback
-            self._mem.append(c_handle)
+        if isinstance(arguments, abc.Sequence):
+            if logger is not None:
+                c_handle = _ffi.new_handle(logger)
+                c_cb = _lib._clingo_logger_callback
+                self._mem.append(c_handle)
+            else:
+                c_handle = _ffi.NULL
+                c_cb = _ffi.NULL
+            c_mem = []
+            c_args = _ffi.new('char*[]', len(arguments))
+            for i, arg in enumerate(arguments):
+                c_mem.append(_ffi.new("char[]", arg.encode()))
+                c_args[i] = c_mem[-1]
+            self._rep = _c_call('clingo_control_t *', _lib.clingo_control_new,
+                                c_args, len(arguments), c_cb, c_handle, message_limit)
+            self._free = True
         else:
-            c_handle = _ffi.NULL
-            c_cb = _ffi.NULL
-        c_mem = []
-        c_args = _ffi.new('char*[]', len(arguments))
-        for i, arg in enumerate(arguments):
-            c_mem.append(_ffi.new("char[]", arg.encode()))
-            c_args[i] = c_mem[-1]
-        self._rep = _c_call('clingo_control_t *', _lib.clingo_control_new,
-                            c_args, len(arguments), c_cb, c_handle, message_limit)
+            self._rep = arguments
+
         self._handler = None
         self._statistics = None
         self._statistics_call = -1.0
         self._error = _Error()
 
     def __del__(self):
-        _lib.clingo_control_free(self._rep)
+        if self._free:
+            _lib.clingo_control_free(self._rep)
 
     def add(self, name: str, parameters: Sequence[str], program: str) -> None:
         '''

@@ -1,9 +1,21 @@
-from clingo import Control
+'''
+Module providing the clingo-like pyclingo application.
+'''
+from clingo import Application, clingo_main
 
-def on_model(m):
-    print(m)
+class PyClingoApplication(Application):
+    '''
+    This is an example app mimimicking clingo.
+    '''
+    program_name = "pyclingo"
 
-ctl = Control(['0'])
-ctl.add("base", [], "1 {a; b} 1. c.")
-ctl.ground([("base", [])])
-ctl.solve(on_model=on_model)
+    def main(self, control, files):
+        for file_ in files:
+            control.load(file_)
+        if not files:
+            control.load('-')
+        control.ground([('base', [])])
+        control.solve()
+
+if __name__ == '__main__':
+    clingo_main(PyClingoApplication())

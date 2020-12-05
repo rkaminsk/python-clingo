@@ -65,6 +65,10 @@ def _cb_error_panic(exception, exc_value, traceback):
     sys.stderr.write('PANIC: exception in nothrow scope')
     _exit(1)
 
+def _cb_error_print(exception, exc_value, traceback):
+    print_exception(exception, exc_value, traceback)
+    return False
+
 class _Error:
     '''
     Class to store an error in a unique location.
@@ -118,3 +122,8 @@ class _CBData:
         Set error in the underlying error object.
         '''
         self._error.error = value
+
+def _overwritten(base, obj, function):
+    return hasattr(obj, function) and (
+        not hasattr(base, function) or
+        getattr(base, function) is not getattr(obj.__class__, function))
