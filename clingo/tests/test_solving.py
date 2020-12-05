@@ -3,32 +3,9 @@ Tests for solving.
 '''
 from unittest import TestCase
 from typing import cast
-from clingo import Control, Function, Model, ModelType, SolveHandle, SolveResult, SymbolicAtom, parse_term
+from clingo import Control, Function, Model, ModelType, SolveHandle, SolveResult, SymbolicAtom
 
-def _p(*models):
-    return [[parse_term(symbol) for symbol in model] for model in models]
-
-class _MCB:
-    # pylint: disable=missing-function-docstring
-    def __init__(self):
-        self._models = []
-        self._core = None
-        self.last = None
-
-    def on_core(self, c):
-        self._core = c
-
-    def on_model(self, m):
-        self.last = (m.type, sorted(m.symbols(shown=True)))
-        self._models.append(self.last[1])
-
-    @property
-    def core(self):
-        return sorted(self._core)
-
-    @property
-    def models(self):
-        return sorted(self._models)
+from . util import _MCB, _check_sat, _p
 
 class TestSolving(TestCase):
     '''
@@ -45,19 +22,13 @@ class TestSolving(TestCase):
         self.mit = None
         self.ctl = None
 
-    def _check_sat(self, ret: SolveResult) -> None:
-        self.assertTrue(ret.satisfiable is True)
-        self.assertTrue(ret.unsatisfiable is False)
-        self.assertTrue(ret.unknown is False)
-        self.assertTrue(ret.exhausted is True)
-
     def test_solve_cb(self):
         '''
         Test solving using callback.
         '''
         self.ctl.add("base", [], "1 {a; b} 1. c.")
         self.ctl.ground([("base", [])])
-        self._check_sat(cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
+        _check_sat(self, cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
         self.assertEqual(self.mcb.models, _p(['a', 'c'], ['b', 'c']))
         self.assertEqual(self.mcb.last[0], ModelType.StableModel)
 
@@ -68,7 +39,7 @@ class TestSolving(TestCase):
         self.ctl.add("base", [], "1 {a; b} 1. c.")
         self.ctl.ground([("base", [])])
         with cast(SolveHandle, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=True)) as hnd:
-            self._check_sat(hnd.get())
+            _check_sat(self, hnd.get())
             self.assertEqual(self.mcb.models, _p(['a', 'c'], ['b', 'c']))
 
     def test_solve_yield(self):
@@ -80,7 +51,7 @@ class TestSolving(TestCase):
         with cast(SolveHandle, self.ctl.solve(on_model=self.mcb.on_model, yield_=True, async_=False)) as hnd:
             for m in hnd:
                 self.mit.on_model(m)
-            self._check_sat(hnd.get())
+            _check_sat(self, hnd.get())
             self.assertEqual(self.mcb.models, _p(['a', 'c'], ['b', 'c']))
             self.assertEqual(self.mit.models, _p(['a', 'c'], ['b', 'c']))
 
@@ -98,7 +69,7 @@ class TestSolving(TestCase):
                 if m is None:
                     break
                 self.mit.on_model(m)
-            self._check_sat(hnd.get())
+            _check_sat(self, hnd.get())
             self.assertEqual(self.mcb.models, _p(['a', 'c'], ['b', 'c']))
             self.assertEqual(self.mit.models, _p(['a', 'c'], ['b', 'c']))
 
@@ -184,7 +155,7 @@ class TestSolving(TestCase):
                     clause.append((Function('a'), False))
                 m.context.add_clause(clause)
 
-            self._check_sat(hnd.get())
+            _check_sat(self, hnd.get())
             self.assertEqual(len(self.mcb.models), 2)
 
     def test_control_nogood(self):
@@ -202,5 +173,5 @@ class TestSolving(TestCase):
                     clause.append((Function('a'), True))
                 m.context.add_nogood(clause)
 
-            self._check_sat(hnd.get())
+            _check_sat(self, hnd.get())
             self.assertEqual(len(self.mcb.models), 2)

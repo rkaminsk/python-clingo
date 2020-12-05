@@ -5,24 +5,9 @@ Tests for the propagator.
 from unittest import TestCase
 from typing import cast
 from clingo import (Assignment, Control, Function, PropagateControl, PropagateInit, Propagator, PropagatorCheckMode,
-                    SolveResult, SymbolicAtom, parse_term)
+                    SolveResult, SymbolicAtom)
 
-def _p(*models):
-    return [[parse_term(symbol) for symbol in model] for model in models]
-
-class _MCB:
-    # pylint: disable=missing-function-docstring
-    def __init__(self):
-        self._models = []
-        self.last = None
-
-    def on_model(self, m):
-        self.last = (m.type, sorted(m.symbols(shown=True)))
-        self._models.append(self.last[1])
-
-    @property
-    def models(self):
-        return sorted(self._models)
+from .util import _MCB, _check_sat, _p
 
 class TestPropagatorControl(Propagator):
     '''
@@ -157,19 +142,11 @@ class TestSymbol(TestCase):
 
     def setUp(self):
         self.mcb = _MCB()
-        self.mit = _MCB()
         self.ctl = Control(['0'])
 
     def tearDown(self):
         self.mcb = None
-        self.mit = None
         self.ctl = None
-
-    def _check_sat(self, ret: SolveResult) -> None:
-        self.assertTrue(ret.satisfiable is True)
-        self.assertTrue(ret.unsatisfiable is False)
-        self.assertTrue(ret.unknown is False)
-        self.assertTrue(ret.exhausted is True)
 
     def test_propagator_control(self):
         '''
@@ -178,7 +155,7 @@ class TestSymbol(TestCase):
         self.ctl.add("base", [], "{a}.")
         self.ctl.ground([("base", [])])
         self.ctl.register_propagator(TestPropagatorControl(self))
-        self._check_sat(cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
+        _check_sat(self, cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
         self.assertEqual(self.mcb.models, _p(['a']))
 
     def test_propagator_init(self):
@@ -188,7 +165,7 @@ class TestSymbol(TestCase):
         self.ctl.add("base", [], "{a; b; c}.")
         self.ctl.ground([("base", [])])
         self.ctl.register_propagator(TestPropagatorInit(self))
-        self._check_sat(cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
+        _check_sat(self, cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
         self.assertEqual(self.mcb.models[-1:], _p(['a', 'b', 'c']))
 
     def test_propagator(self):
@@ -198,7 +175,7 @@ class TestSymbol(TestCase):
         self.ctl.add("base", [], "")
         self.ctl.ground([("base", [])])
         self.ctl.register_propagator(TestPropagator(self))
-        self._check_sat(cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
+        _check_sat(self, cast(SolveResult, self.ctl.solve(on_model=self.mcb.on_model, yield_=False, async_=False)))
         self.assertEqual(self.mcb.models, _p([], []))
 
     def test_heurisitc(self):
