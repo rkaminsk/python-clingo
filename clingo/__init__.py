@@ -138,7 +138,6 @@ def _cb_error_handler(param: str):
             handler = _ffi.from_handle(traceback.tb_frame.f_locals[param])
             handler.error = (exception, exc_value, traceback)
             _lib.clingo_set_error(_lib.clingo_error_unknown, str(exc_value).encode())
-            print_exception(exception, exc_value, traceback)
         else:
             _lib.clingo_set_error(_lib.clingo_error_runtime, "error in callback".encode())
         return False
@@ -158,6 +157,60 @@ class Lookup(Generic[Key, Value], Collection[Value]):
     @abstractmethod
     def __getitem__(self, key: Key) -> Optional[Value]:
         pass
+
+class _Error:
+    '''
+    Class to store an error in a unique location.
+    '''
+    def __init__(self):
+        self._error = None
+
+    def clear(self):
+        '''
+        Clears the last error set.
+        '''
+        self._error = None
+
+    @property
+    def error(self):
+        '''
+        Return the last error set.
+        '''
+        # pylint: disable=protected-access,missing-function-docstring
+        return self._error
+
+    @error.setter
+    def error(self, value):
+        '''
+        Set an error if no error has been set before.
+
+        This function is thread-safe.
+        '''
+        # pylint: disable=protected-access
+        self._error = value
+
+class _CBData:
+    '''
+    The class stores the data object that should be passed to a callback as
+    well as provides the means to set an error while a callback is running.
+    '''
+    def __init__(self, data, error):
+        self.data = data
+        self._error = error
+
+    @property
+    def error(self):
+        '''
+        Get the last error in the underlying error object.
+        '''
+        return self._error.error
+
+    @error.setter
+    def error(self, value):
+        '''
+        Set error in the underlying error object.
+        '''
+        self._error.error = value
 
 # {{{1 basics [100%]
 
@@ -1342,7 +1395,7 @@ class SolveHandle:
         _lib.clingo_solve_handle_wait(self._rep, 0 if timeout is None else timeout, p_res)
         return p_res[0]
 
-# {{{1 propagators [20%]
+# {{{1 propagators [100%]
 
 class _Slice:
     '''
@@ -1874,7 +1927,6 @@ class PropagateInit:
         for idx in range(size):
             yield TheoryAtom(atoms, idx)
 
-
 class PropagateControl(metaclass=ABCMeta):
     '''
     This object can be used to add clauses and to propagate them.
@@ -1883,13 +1935,16 @@ class PropagateControl(metaclass=ABCMeta):
     --------
     Control.register_propagator
     '''
-    def add_clause(self, clause: Iterable[int], tag: bool=False, lock: bool=False) -> bool:
+    def __init__(self, rep):
+        self._rep = rep
+
+    def add_clause(self, clause: Sequence[int], tag: bool=False, lock: bool=False) -> bool:
         '''
         Add the given clause to the solver.
 
         Parameters
         ----------
-        clause : Iterable[int]
+        clause : Sequence[int]
             List of solver literals forming the clause.
         tag : bool=False
             If true, the clause applies only in the current solving step.
@@ -1901,6 +1956,12 @@ class PropagateControl(metaclass=ABCMeta):
         bool
             This method returns false if the current propagation must be stopped.
         '''
+        type_ = 0
+        if tag:
+            type_ |= _lib.clingo_clause_type_volatile
+        if lock:
+            type_ |= _lib.clingo_clause_type_static
+        return _c_call('bool', _lib.clingo_propagate_control_add_clause, self._rep, clause, len(clause), type_)
 
     def add_literal(self) -> int:
         '''
@@ -1915,11 +1976,13 @@ class PropagateControl(metaclass=ABCMeta):
         int
             The added solver literal.
         '''
+        return _c_call('clingo_literal_t', _lib.clingo_propagate_control_add_literal, self._rep)
 
     def add_nogood(self, clause: Iterable[int], tag: bool=False, lock: bool=False) -> bool:
         '''
         Equivalent to `self.add_clause([-lit for lit in clause], tag, lock)`.
         '''
+        return self.add_clause([-lit for lit in clause], tag, lock)
 
     def add_watch(self, literal: int) -> None:
         '''
@@ -1939,6 +2002,7 @@ class PropagateControl(metaclass=ABCMeta):
         Unlike `PropagateInit.add_watch` this does not add a watch to all solver
         threads but just the current one.
         '''
+        _handle_error(_lib.clingo_propagate_control_add_watch(self._rep, literal))
 
     def has_watch(self, literal: int) -> bool:
         '''
@@ -1954,6 +2018,7 @@ class PropagateControl(metaclass=ABCMeta):
         bool
             Whether the literal is watched.
         '''
+        return _lib.clingo_propagate_control_has_watch(self._rep, literal)
 
     def propagate(self) -> bool:
         '''
@@ -1964,6 +2029,7 @@ class PropagateControl(metaclass=ABCMeta):
         bool
             This method returns false if the current propagation must be stopped.
         '''
+        return _c_call('bool', _lib.clingo_propagate_control_propagate, self._rep)
 
     def remove_watch(self, literal: int) -> None:
         '''
@@ -1978,15 +2044,21 @@ class PropagateControl(metaclass=ABCMeta):
         -------
         None
         '''
+        _lib.clingo_propagate_control_remove_watch(self._rep, literal)
 
-    assignment: Assignment
-    '''
-    `Assignment` object capturing the partial assignment of the current solver thread.
-    '''
-    thread_id: int
-    '''
-    The numeric id of the current solver thread.
-    '''
+    @property
+    def assignment(self) -> Assignment:
+        '''
+        `Assignment` object capturing the partial assignment of the current solver thread.
+        '''
+        return Assignment(_lib.clingo_propagate_control_assignment(self._rep))
+
+    @property
+    def thread_id(self) -> int:
+        '''
+        The numeric id of the current solver thread.
+        '''
+        return _lib.clingo_propagate_control_thread_id(self._rep)
 
 class Propagator(metaclass=ABCMeta):
     '''
@@ -2128,6 +2200,33 @@ class Propagator(metaclass=ABCMeta):
         decision. If all propagators return 0, then the fallback literal is
         used.
         '''
+
+'''
+cnt.append('extern "Python" bool _clingo_propagator_init(clingo_propagate_init_t *init, void *data);')
+cnt.append('extern "Python" bool _clingo_propagator_propagate(clingo_propagate_control_t *control, clingo_literal_t const *changes, size_t size, void *data);')
+cnt.append('extern "Python" void _clingo_propagator_undo(clingo_propagate_control_t const *control, clingo_literal_t const *changes, size_t size, void *data);')
+cnt.append('extern "Python" bool _clingo_propagator_check(clingo_propagate_control_t *control, void *data);')
+cnt.append('extern "Python" bool _clingo_propagator_decide(clingo_id_t thread_id, clingo_assignment_t const *assignment, clingo_literal_t fallback, void *data, clingo_literal_t *decision);')
+'''
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_propagator_init(init, data):
+    pass
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_propagator_propagate(control, changes, size, data):
+    pass
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_propagator_undo(control, changes, size, data):
+    pass
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_propagator_check(control, data):
+    pass
+
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_propagator_decide(thread_id, assignment, fallback, data, decision):
+    pass
 
 # {{{1 ground program inspection/building [0%]
 
@@ -2867,6 +2966,32 @@ class Configuration:
 
 StatisticsValue = Union['StatisticsArray', 'StatisticsMap', float]
 
+def _statistics_type(stats, key):
+    return _c_call('clingo_statistics_type_t', _lib.clingo_statistics_type, stats, key)
+
+def _statistics(stats, key):
+    '''
+    Transform clingo's statistics into python type.
+    '''
+    type_ = _statistics_type(stats, key)
+
+    if type_ == _lib.clingo_statistics_type_value:
+        return _c_call('double', _lib.clingo_statistics_value_get, stats, key)
+
+    if type_ == _lib.clingo_statistics_type_array:
+        ret = []
+        for i in range(_c_call('size_t', _lib.clingo_statistics_array_size, stats, key)):
+            ret.append(_statistics(stats, _c_call('uint64_t', _lib.clingo_statistics_array_at, stats, key, i)))
+        return ret
+
+    assert type_ == _lib.clingo_statistics_type_map
+    ret = {}
+    for i in range(_c_call('size_t', _lib.clingo_statistics_map_size, stats, key)):
+        name = _c_call('char*', _lib.clingo_statistics_map_subkey_name, stats, key, i)
+        subkey = _c_call('uint64_t', _lib.clingo_statistics_map_at, stats, key, name)
+        ret[_to_str(name)] = _statistics(stats, subkey)
+    return ret
+
 def _mutable_statistics_value_type(value):
     if isinstance(value, str):
         raise TypeError('unexpected string')
@@ -2876,15 +3001,12 @@ def _mutable_statistics_value_type(value):
         return _lib.clingo_statistics_type_map
     return _lib.clingo_statistics_type_value
 
-def _mutable_statistics_type(stats, key):
-    return _c_call('clingo_statistics_type_t', _lib.clingo_statistics_type, stats, key)
-
 def _mutable_statistics(stats) -> 'StatisticsMap':
     key = _c_call('uint64_t', _lib.clingo_statistics_root, stats)
     return cast(StatisticsMap, _mutable_statistics_get(stats, key))
 
 def _mutable_statistics_get(stats, key) -> StatisticsValue:
-    type_ = _mutable_statistics_type(stats, key)
+    type_ = _statistics_type(stats, key)
 
     if type_ == _lib.clingo_statistics_type_array:
         return StatisticsArray(stats, key)
@@ -2943,7 +3065,7 @@ class StatisticsArray(MutableSequence[StatisticsValue]):
 
     def __setitem__(self, index, value):
         key = _c_call('uint64_t', _lib.clingo_statistics_array_at, self._rep, self._key, index)
-        type_ = _mutable_statistics_type(self._rep, key)
+        type_ = _statistics_type(self._rep, key)
         _mutable_statistics_set(self._rep, key, type_, value, True)
 
     def insert(self, index, value):
@@ -3057,7 +3179,7 @@ class StatisticsMap(MutableMapping[str, StatisticsValue]):
         has_key = name in self
         if has_key:
             key = _c_call('uint64_t', _lib.clingo_statistics_map_at, self._rep, self._key, name.encode())
-            type_ = _mutable_statistics_type(self._rep, key)
+            type_ = _statistics_type(self._rep, key)
         else:
             type_ = _mutable_statistics_value_type(value)
             key = _c_call('uint64_t', _lib.clingo_statistics_map_add_subkey, self._rep, self._key, name.encode(), type_)
@@ -3148,7 +3270,6 @@ class StatisticsMap(MutableMapping[str, StatisticsValue]):
 class _SolveEventHandler:
     # pylint: disable=missing-function-docstring
     def __init__(self, on_model, on_statistics, on_finish):
-        self.error = None
         self._on_model = on_model
         self._on_statistics = on_statistics
         self._on_finish = on_finish
@@ -3172,7 +3293,7 @@ def _clingo_solve_event_callback(type_, event, data, goon):
     '''
     Low-level solve event handler.
     '''
-    handler = _ffi.from_handle(data)
+    handler = _ffi.from_handle(data).data
     if type_ == _lib.clingo_solve_event_type_finish:
         handler.on_finish(_ffi.cast('clingo_solve_result_bitset_t*', event)[0])
 
@@ -3185,15 +3306,6 @@ def _clingo_solve_event_callback(type_, event, data, goon):
 
     return True
 
-class _Context:
-    def __init__(self, context):
-        self.error = None
-        self.context = context
-
-    def __call__(self, name, args):
-        context = self.context if hasattr(self.context, name) else sys.modules['__main__']
-        return getattr(context, name)(*args)
-
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_ground_callback(location, name, arguments, arguments_size, data, symbol_callback, symbol_callback_data):
     '''
@@ -3201,12 +3313,17 @@ def _clingo_ground_callback(location, name, arguments, arguments_size, data, sym
     '''
     # Note: location could be attached to error message
     # pylint: disable=protected-access,unused-argument
-    context = _ffi.from_handle(data)
+    context = _ffi.from_handle(data).data
+    py_name = _ffi.string(name).decode()
+    fun = getattr(context if hasattr(context, py_name) else
+                  sys.modules['__main__'],
+                  py_name)
 
     args = []
     for i in range(arguments_size):
         args.append(Symbol(arguments[i]))
-    symbols = list(context(_ffi.string(name).decode(), args))
+
+    symbols = list(fun(*args))
 
     c_symbols = _ffi.new('clingo_symbol_t[]', len(symbols))
     for i, sym in enumerate(symbols):
@@ -3214,29 +3331,6 @@ def _clingo_ground_callback(location, name, arguments, arguments_size, data, sym
     symbol_callback(c_symbols, len(symbols), symbol_callback_data)
 
     return True
-
-def _statistics(stats, key):
-    '''
-    Transform clingo's statistics into python type.
-    '''
-    type_ = _c_call('clingo_statistics_type_t ', _lib.clingo_statistics_type, stats, key)
-
-    if type_ == _lib.clingo_statistics_type_value:
-        return _c_call('double', _lib.clingo_statistics_value_get, stats, key)
-
-    if type_ == _lib.clingo_statistics_type_array:
-        ret = []
-        for i in range(_c_call('size_t', _lib.clingo_statistics_array_size, stats, key)):
-            ret.append(_statistics(stats, _c_call('uint64_t', _lib.clingo_statistics_array_at, stats, key, i)))
-        return ret
-
-    assert type_ == _lib.clingo_statistics_type_map
-    ret = {}
-    for i in range(_c_call('size_t', _lib.clingo_statistics_map_size, stats, key)):
-        name = _c_call('char*', _lib.clingo_statistics_map_subkey_name, stats, key, i)
-        subkey = _c_call('uint64_t', _lib.clingo_statistics_map_at, stats, key, name)
-        ret[_to_str(name)] = _statistics(stats, subkey)
-    return ret
 
 class Control:
     '''
@@ -3260,9 +3354,11 @@ class Control:
     def __init__(self, arguments: Sequence[str]=[],
                  logger: Callable[[MessageCode,str],None]=None, message_limit: int=20):
         # pylint: disable=protected-access,dangerous-default-value
+        self._mem = []
         if logger is not None:
             c_handle = _ffi.new_handle(logger)
             c_cb = _lib._clingo_logger_callback
+            self._mem.append(c_handle)
         else:
             c_handle = _ffi.NULL
             c_cb = _ffi.NULL
@@ -3276,6 +3372,7 @@ class Control:
         self._handler = None
         self._statistics = None
         self._statistics_call = -1.0
+        self._error = _Error()
 
     def __del__(self):
         _lib.clingo_control_free(self._rep)
@@ -3447,11 +3544,12 @@ class Control:
             SAT
         '''
         # pylint: disable=protected-access,dangerous-default-value
+        self._error.clear()
         handler = None
         c_handler = _ffi.NULL
         c_cb = _ffi.NULL
         if context is not None:
-            handler = _Context(context)
+            handler = _CBData(context, self._error)
             c_handler = _ffi.new_handle(handler)
             c_cb = _lib._clingo_ground_callback
 
@@ -3553,7 +3651,15 @@ class Control:
         Not all functions of the `Propagator` interface have to be implemented and can
         be omitted if not needed.
         '''
-        raise RuntimeError('implement me!!!')
+        c_propagator = _ffi.new('clingo_propagator_t', (
+            _clingo_propagator_init if hasattr(propagator, "init") else _ffi.NULL,
+            _clingo_propagator_propagate if hasattr(propagator, "propagate") else _ffi.NULL,
+            _clingo_propagator_undo if hasattr(propagator, "undo") else _ffi.NULL,
+            _clingo_propagator_check if hasattr(propagator, "check") else _ffi.NULL,
+            _clingo_propagator_decide if hasattr(propagator, "decide") else _ffi.NULL))
+        c_data = _ffi.new_handle(_CBData(propagator, self._error))
+        self._mem.append(c_data)
+        _handle_error(_lib.clingo_control_register_propagator(self._rep, c_propagator, c_data, False))
 
     def release_external(self, external: Union[Symbol,int]) -> None:
         '''
@@ -3704,8 +3810,10 @@ class Control:
             SAT
         '''
         # pylint: disable=protected-access,dangerous-default-value
+        self._error.clear()
         handler = _SolveEventHandler(on_model, on_statistics, on_finish)
-        self._handler = _ffi.new_handle(handler)
+        data = _CBData(handler, self._error)
+        self._handler = _ffi.new_handle(data)
 
         p_ass = _ffi.NULL
         if assumptions:
@@ -3732,7 +3840,7 @@ class Control:
                 self._rep, mode,
                 p_ass, len(assumptions),
                 _lib._clingo_solve_event_callback, self._handler,
-                handler=handler),
+                handler=data),
             handler)
 
         if not yield_ and not async_:
