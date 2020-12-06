@@ -42,9 +42,9 @@ class ApplicationOptions(metaclass=ABCMeta):
     '''
     Object to add custom options to a clingo based application.
     '''
-    def __init__(self, rep):
+    def __init__(self, rep, mem):
         self._rep = rep
-        self._mem = []
+        self._mem = mem
 
     def add(self, group: str, option: str, description: str, parser: Callable[[str], bool],
             multi: bool=False, argument: Optional[str]=None) -> None:
@@ -92,7 +92,7 @@ class ApplicationOptions(metaclass=ABCMeta):
         _handle_error(_lib.clingo_options_add(
             self._rep, group.encode(), option.encode(), description.encode(),
             _lib._clingo_application_options_parse, c_data,
-            multi, argument))
+            multi, argument.encode() if argument is not None else _ffi.NULL))
 
     def add_flag(self, group: str, option: str, description: str, target: Flag) -> None:
         '''
@@ -120,7 +120,7 @@ class ApplicationOptions(metaclass=ABCMeta):
         '''
         # pylint: disable=protected-access
         self._mem.append(target)
-        _handle_error(_lib._clingo_options_add_flag(
+        _handle_error(_lib.clingo_options_add_flag(
             self._rep, group.encode(), option.encode(), description.encode(),
             target._flag))
 
@@ -336,8 +336,8 @@ def _clingo_application_print_model(model, printer, printer_data, data):
 
 @_ffi.def_extern(onerror=_cb_error_panic)
 def _clingo_application_register_options(options, data):
-    app = _ffi.from_handle(data)[0]
-    app.register_options(ApplicationOptions(options))
+    app, mem = _ffi.from_handle(data)
+    app.register_options(ApplicationOptions(options, mem))
     return True
 
 @_ffi.def_extern(onerror=_cb_error_panic)
