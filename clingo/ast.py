@@ -293,7 +293,6 @@ statement = Rule
                            , arity     : int
                            , elements  : str
                            , guard     : TheoryGuardDefinition
-
                                           ( operators : str*
                                           , term      : str
                                           )?
@@ -303,10 +302,26 @@ statement = Rule
 '''
 
 from enum import Enum
-from typing import Any, Callable, ContextManager, Iterable, List, Mapping, Tuple
+from typing import Any, Callable, ContextManager, Iterable, List, Tuple
 from abc import ABCMeta
 
 from . import Control, MessageCode
+
+# It might be a good idea to implement the AST in C with only a few functions and enums:
+#
+# - Value: Union[int,str,Symbol,AST,List[str],List[AST]]
+# - AST.location() -> Location
+# - AST.type() -> ASTType
+# - AST.size() -> int
+# - AST.get_key(int) -> str
+# - AST.get_value(str) -> Value
+# - AST.set_item(str, Value) -> None
+# - AST.check() -> bool (to check if all required values are present)
+#
+# With this interface, the ast can be implemented easily in any dynamically
+# typed language. Ownership could be handled with shared pointers (requiring
+# users not to build cycles). Recursion depth should be no problem in typical
+# ASP programs.
 
 def Aggregate(*args: Any, **kwargs: Any) -> Any:
     pass
@@ -521,7 +536,6 @@ class ASTType(metaclass=ABCMeta):
 
 class AST:
     '''
-    AST(type: ASTType, **arguments: Mapping[str,Any]) -> AST
     Represents a node in the abstract syntax tree.
 
     AST nodes implement Python's rich comparison operators and are ordered
@@ -534,7 +548,7 @@ class AST:
     ----------
     type : ASTType
         The type of the onde.
-    arguments : Mapping[str,Any]
+    **arguments : Any
         Additionally, the functions takes an arbitrary number of keyword arguments.
         These should contain the required fields of the node but can also be set
         later.
@@ -545,7 +559,7 @@ class AST:
     this module. The parameters of the functions correspond to the nonterminals as
     given in the [grammar](.) above.
     '''
-    def __init__(self, type_: ASTType, **arguments: Mapping[str,Any]):
+    def __init__(self, type_: ASTType, **arguments: Any):
         pass
 
     def items(self) -> List[Tuple[str,"AST"]]:
