@@ -93,7 +93,6 @@ def run_app(app: Callable[[Queue], Application], program: str, *args: Sequence[s
         seq.append(ret)
     p.join()
     q.close()
-    p.close()
 
     return status, seq
 
