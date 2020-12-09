@@ -2,64 +2,15 @@
 This modules contains functions and classes related to propagation.
 '''
 
-from typing import Iterable, Iterator, Optional, Sequence, TypeVar, Tuple
+from typing import Iterable, Iterator, Optional, Sequence, Tuple
 from enum import Enum
 from abc import ABCMeta
 
 from ._internal import _cb_error_handler, _c_call, _ffi, _handle_error, _lib
+from .util import Slice, SlicedSequence
 from .symbolic_atoms import SymbolicAtoms
 from .theory_atoms import TheoryAtom
 
-class _Slice:
-    '''
-    Wrapper for Python's slice that computes index ranges to slice sequences.
-
-    Currently, the range is recomputed each time. It is probably also possible
-    to combine the involved slices into one.
-    '''
-    def __init__(self, slc: slice, rec: Optional['_Slice']=None):
-        self._slc = slc
-        self._rec = rec
-
-    def rng(self, size):
-        '''
-        Return a range providing indices to access a sequence of length size.
-        '''
-        return (range(*self._slc.indices(size))
-                if self._rec is None else
-                self._rec.rng(size)[self._slc])
-
-_Value = TypeVar('_Value')
-
-class _SlicedSequence(Sequence[_Value]):
-    '''
-    Helper to slice sequences.
-    '''
-    def __init__(self, seq: Sequence[_Value], slc: _Slice):
-        self._seq = seq
-        self._slc = slc
-        self._len = -1
-        self._lst = None
-
-    @property
-    def _rng(self):
-        size = len(self._seq)
-        if size != self._len:
-            self._lst = self._slc.rng(size)
-            self._len = size
-        return self._lst
-
-    def __len__(self) -> int:
-        return len(self._rng)
-
-    def __iter__(self):
-        for idx in self._rng:
-            yield self._seq[idx]
-
-    def __getitem__(self, slc):
-        if isinstance(slc, slice):
-            return _SlicedSequence(self._seq, _Slice(slc, self._slc))
-        return self._seq[self._rng[slc]]
 
 class Trail(Sequence[int]):
     '''
@@ -79,7 +30,7 @@ class Trail(Sequence[int]):
 
     def __getitem__(self, slc):
         if isinstance(slc, slice):
-            return _SlicedSequence(self, _Slice(slc))
+            return SlicedSequence(self, Slice(slc))
         if slc < 0:
             slc += len(self)
         if slc < 0 or slc >= len(self):
@@ -141,7 +92,7 @@ class Assignment(Sequence[int]):
 
     def __getitem__(self, slc):
         if isinstance(slc, slice):
-            return _SlicedSequence(self, _Slice(slc))
+            return SlicedSequence(self, Slice(slc))
         if slc < 0:
             slc += len(self)
         if slc < 0 or slc >= len(self):

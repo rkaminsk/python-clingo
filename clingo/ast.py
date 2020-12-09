@@ -302,11 +302,12 @@ statement = Rule
 '''
 
 from enum import Enum
-from typing import Any, Callable, ContextManager, Iterable, List, Tuple
+from typing import Any, Callable, ContextManager, Iterable, List, Sequence, Tuple
 from abc import ABCMeta
 
 from ._internal import (_CBData, _Error,
                         _cb_error_handler, _c_call, _ffi, _handle_error, _lib, _to_str)
+from .util import Slice, SlicedMutableSequence
 from .core import MessageCode
 from .control import Control
 
@@ -587,6 +588,106 @@ _attributes = {
     "variable": _lib.clingo_ast_attribute_variable,
     "weight": _lib.clingo_ast_attribute_weight}
 
+class ASTSequence(Sequence['AST']):
+    def __init__(self, rep, attribute):
+        self._rep = rep
+        self._attribute = attribute
+        _lib.clingo_ast_acquire(self._rep)
+
+    def __del__(self):
+        _lib.clingo_ast_release(self._rep)
+
+    def __len__(self) -> int:
+        return _c_call('size_t', _lib.clingo_ast_attribute_size_ast_array, self._rep, self._attribute)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return SlicedMutableSequence(self, Slice(index))
+        size = len(self)
+        if index < 0:
+            index += size
+        if index < 0 or index >= size:
+            raise IndexError('invalid index')
+        return AST(_c_call('clingo_ast_t*', _lib.clingo_ast_attribute_get_ast_at, self._rep, self._attribute, index))
+
+    def __iter__(self):
+        for index in range(len(self)):
+            yield AST(_c_call('clingo_ast_t*', _lib.clingo_ast_attribute_get_ast_at, self._rep, self._attribute, index))
+
+    def __setitem__(self, index, ast: 'AST'):
+        if isinstance(index, slice):
+            raise TypeError('slicing not implemented')
+        _handle_error(_lib.clingo_ast_attribute_set_ast_at(self._rep, self._attribute, index, ast._rep))
+
+    def __delitem__(self, index):
+        if isinstance(index, slice):
+            raise TypeError('slicing not implemented')
+        size = len(self)
+        if index < 0:
+            index += size
+        if index < 0 or index >= size:
+            raise IndexError('invalid index')
+        _handle_error(_lib.clingo_ast_attribute_delete_ast_at(self._rep, self._attribute, index))
+
+    def insert(self, index, ast: 'AST'):
+        _handle_error(_lib.clingo_ast_attribute_insert_ast_at(self._rep, self._attribute, index, ast._rep))
+
+    def __str__(self):
+        return str(list(self))
+
+    def __repr__(self):
+        return repr(list(self))
+
+class StrSequence(Sequence[str]):
+    def __init__(self, rep, attribute):
+        self._rep = rep
+        self._attribute = attribute
+        _lib.clingo_ast_acquire(self._rep)
+
+    def __del__(self):
+        _lib.clingo_ast_release(self._rep)
+
+    def __len__(self) -> int:
+        return _c_call('size_t', _lib.clingo_ast_attribute_size_str_array, self._rep, self._attribute)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return SlicedMutableSequence(self, Slice(index))
+        size = len(self)
+        if index < 0:
+            index += size
+        if index < 0 or index >= size:
+            raise IndexError('invalid index')
+        return _to_str(_c_call('char[]', _lib.clingo_ast_attribute_get_str_at, self._rep, self._attribute, index))
+
+    def __iter__(self):
+        for index in range(len(self)):
+            yield _to_str(_c_call('char[]', _lib.clingo_ast_attribute_get_str_at, self._rep, self._attribute, index))
+
+    def __setitem__(self, index, val: str):
+        if isinstance(index, slice):
+            raise TypeError('slicing not implemented')
+        _handle_error(_lib.clingo_str_attribute_set_str_at(self._rep, self._attribute, index, val.encode()))
+
+    def __delitem__(self, index):
+        if isinstance(index, slice):
+            raise TypeError('slicing not implemented')
+        size = len(self)
+        if index < 0:
+            index += size
+        if index < 0 or index >= size:
+            raise IndexError('invalid index')
+        _handle_error(_lib.clingo_ast_attribute_delete_str_at(self._rep, self._attribute, index))
+
+    def insert(self, index, val: str):
+        _handle_error(_lib.clingo_ast_attribute_insert_str_at(self._rep, self._attribute, index, val.encode()))
+
+    def __str__(self):
+        return str(list(self))
+
+    def __repr__(self):
+        return repr(list(self))
+
 class AST:
     '''
     Represents a node in the abstract syntax tree.
@@ -615,21 +716,9 @@ class AST:
     #def __init__(self, type_: ASTType, **arguments: Any):
     def __init__(self, rep):
         super().__setattr__("_rep", rep)
-        # bool clingo_ast_attribute_clear(clingo_ast_t *ast, clingo_ast_attribute_t attribute);
-        # bool clingo_ast_attribute_set_number(clingo_ast_t *ast, clingo_ast_attribute_t attribute, int value);
-        # bool clingo_ast_attribute_set_location(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_location_t const *value);
-        # bool clingo_ast_attribute_set_string(clingo_ast_t *ast, clingo_ast_attribute_t attribute, char const *value);
-        # bool clingo_ast_attribute_set_ast(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_ast_t *value);
-        # bool clingo_ast_attribute_get_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, char const **value);
-        # bool clingo_ast_attribute_set_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, char const *value);
-        # bool clingo_ast_attribute_delete_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index);
-        # bool clingo_ast_attribute_size_string_array(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t *size);
-        # bool clingo_ast_attribute_insert_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, char const *value);
-        # bool clingo_ast_attribute_get_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, clingo_ast_t **value);
-        # bool clingo_ast_attribute_set_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, clingo_ast_t *value);
-        # bool clingo_ast_attribute_delete_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index);
-        # bool clingo_ast_attribute_size_ast_array(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t *size);
-        # bool clingo_ast_attribute_insert_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, clingo_ast_t *value);
+
+    def __del__(self):
+        _lib.clingo_ast_release(self._rep)
 
     @property
     def ast_type(self):
@@ -656,9 +745,18 @@ class AST:
         if attr_type == _lib.clingo_ast_attribute_type_ast:
             return AST(_c_call('clingo_ast_t*', _lib.clingo_ast_attribute_get_ast, self._rep, attr_id))
         if attr_type == _lib.clingo_ast_attribute_type_string_array:
-            raise RuntimeError("implement me")
+            return StrSequence(self._rep, attr_id)
         assert attr_type == _lib.clingo_ast_attribute_type_ast_array
-        raise RuntimeError("implement me")
+        return ASTSequence(self._rep, attr_id)
+
+    def __setattr__(self, name):
+        # bool clingo_ast_attribute_clear(clingo_ast_t *ast, clingo_ast_attribute_t attribute);
+        # bool clingo_ast_attribute_set_number(clingo_ast_t *ast, clingo_ast_attribute_t attribute, int value);
+        # bool clingo_ast_attribute_set_location(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_location_t const *value);
+        # bool clingo_ast_attribute_set_string(clingo_ast_t *ast, clingo_ast_attribute_t attribute, char const *value);
+        # bool clingo_ast_attribute_set_ast(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_ast_t *value);
+        # probably needs methods to clear arrays
+        raise RuntimeError('implement me!!!')
 
     def items(self) -> List[Tuple[str,"AST"]]:
         '''
