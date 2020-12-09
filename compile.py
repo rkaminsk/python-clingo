@@ -52,6 +52,8 @@ cnt.append('extern "Python" bool _clingo_application_register_options(clingo_opt
 cnt.append('extern "Python" bool _clingo_application_validate_options(void *data);')
 # application options callbacks
 cnt.append('extern "Python" bool _clingo_application_options_parse(char const *value, void *data);')
+# ast callbacks
+cnt.append('extern "Python" bool _clingo_ast_callback(clingo_ast_t const *, void *);')
 
 ffi.set_source(
     '_clingo',

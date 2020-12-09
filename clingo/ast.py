@@ -305,7 +305,10 @@ from enum import Enum
 from typing import Any, Callable, ContextManager, Iterable, List, Tuple
 from abc import ABCMeta
 
-from . import Control, MessageCode
+from ._internal import (_CBData, _Error,
+                        _cb_error_handler, _c_call, _ffi, _handle_error, _lib, _to_str)
+from .core import MessageCode
+from .control import Control
 
 # It might be a good idea to implement the AST in C with only a few functions and enums:
 #
@@ -477,62 +480,112 @@ def Variable(*args: Any, **kwargs: Any) -> Any:
     pass
 
 
-class ASTType(metaclass=ABCMeta):
+class ASTType(Enum):
     '''
     Enumeration of ast node types.
     '''
-    # Aggregate: ASTType
-    # AggregateGuard: ASTType
-    # BinaryOperation: ASTType
-    # BodyAggregate: ASTType
-    # BodyAggregateElement: ASTType
-    # BooleanConstant: ASTType
-    # CSPGuard: ASTType
-    # CSPLiteral: ASTType
-    # CSPProduct: ASTType
-    # CSPSum: ASTType
-    # Comparison: ASTType
-    # ConditionalLiteral: ASTType
-    # Defined: ASTType
-    # Definition: ASTType
-    # Disjoint: ASTType
-    # DisjointElement: ASTType
-    # Disjunction: ASTType
-    # Edge: ASTType
-    # External: ASTType
-    # Function: ASTType
-    # HeadAggregate: ASTType
-    # HeadAggregateElement: ASTType
-    # Heuristic: ASTType
-    # Id: ASTType
-    # Interval: ASTType
-    # Literal: ASTType
-    # Minimize: ASTType
-    # Pool: ASTType
-    # Program: ASTType
-    # ProjectAtom: ASTType
-    # ProjectSignature: ASTType
-    # Rule: ASTType
-    # Script: ASTType
-    # ShowSignature: ASTType
-    # ShowTerm: ASTType
-    # Symbol: ASTType
-    # SymbolicAtom: ASTType
-    # TheoryAtom: ASTType
-    # TheoryAtomDefinition: ASTType
-    # TheoryAtomElement: ASTType
-    # TheoryDefinition: ASTType
-    # TheoryFunction: ASTType
-    # TheoryGuard: ASTType
-    # TheoryGuardDefinition: ASTType
-    # TheoryOperatorDefinition: ASTType
-    # TheorySequence: ASTType
-    # TheoryTermDefinition: ASTType
-    # TheoryUnparsedTerm: ASTType
-    # TheoryUnparsedTermElement: ASTType
-    # UnaryOperation: ASTType
-    # Variable: ASTType
+    Id = _lib.clingo_ast_type_id
+    Variable = _lib.clingo_ast_type_variable
+    Symbol = _lib.clingo_ast_type_symbol
+    UnaryOperation = _lib.clingo_ast_type_unary_operation
+    BinaryOperation = _lib.clingo_ast_type_binary_operation
+    Interval = _lib.clingo_ast_type_interval
+    Function = _lib.clingo_ast_type_function
+    Pool = _lib.clingo_ast_type_pool
+    CspProduct = _lib.clingo_ast_type_csp_product
+    CspSum = _lib.clingo_ast_type_csp_sum
+    CspGuard = _lib.clingo_ast_type_csp_guard
+    BooleanConstant = _lib.clingo_ast_type_boolean_constant
+    SymbolicAtom = _lib.clingo_ast_type_symbolic_atom
+    Comparison = _lib.clingo_ast_type_comparison
+    CspLiteral = _lib.clingo_ast_type_csp_literal
+    AggregateGuard = _lib.clingo_ast_type_aggregate_guard
+    ConditionalLiteral = _lib.clingo_ast_type_conditional_literal
+    Aggregate = _lib.clingo_ast_type_aggregate
+    BodyAggregateElement = _lib.clingo_ast_type_body_aggregate_element
+    BodyAggregate = _lib.clingo_ast_type_body_aggregate
+    HeadAggregateElement = _lib.clingo_ast_type_head_aggregate_element
+    HeadAggregate = _lib.clingo_ast_type_head_aggregate
+    Disjunction = _lib.clingo_ast_type_disjunction
+    DisjointElement = _lib.clingo_ast_type_disjoint_element
+    Disjoint = _lib.clingo_ast_type_disjoint
+    TheorySequence = _lib.clingo_ast_type_theory_sequence
+    TheoryFunction = _lib.clingo_ast_type_theory_function
+    TheoryUnparsedTermElement = _lib.clingo_ast_type_theory_unparsed_term_element
+    TheoryUnparsedTerm = _lib.clingo_ast_type_theory_unparsed_term
+    TheoryGuard = _lib.clingo_ast_type_theory_guard
+    TheoryAtomElement = _lib.clingo_ast_type_theory_atom_element
+    TheoryAtom = _lib.clingo_ast_type_theory_atom
+    Literal = _lib.clingo_ast_type_literal
+    TheoryOperatorDefinition = _lib.clingo_ast_type_theory_operator_definition
+    TheoryTermDefinition = _lib.clingo_ast_type_theory_term_definition
+    TheoryGuardDefinition = _lib.clingo_ast_type_theory_guard_definition
+    TheoryAtomDefinition = _lib.clingo_ast_type_theory_atom_definition
+    Rule = _lib.clingo_ast_type_rule
+    Definition = _lib.clingo_ast_type_definition
+    ShowSignature = _lib.clingo_ast_type_show_signature
+    ShowTerm = _lib.clingo_ast_type_show_term
+    Minimize = _lib.clingo_ast_type_minimize
+    Script = _lib.clingo_ast_type_script
+    Program = _lib.clingo_ast_type_program
+    External = _lib.clingo_ast_type_external
+    Edge = _lib.clingo_ast_type_edge
+    Heuristic = _lib.clingo_ast_type_heuristic
+    ProjectAtom = _lib.clingo_ast_type_project_atom
+    ProjectSignature = _lib.clingo_ast_type_project_signature
+    Defined = _lib.clingo_ast_type_defined
+    TheoryDefinition = _lib.clingo_ast_type_theory_definition
 
+_attributes = {
+    "argument": _lib.clingo_ast_attribute_argument,
+    "arguments": _lib.clingo_ast_attribute_arguments,
+    "arity": _lib.clingo_ast_attribute_arity,
+    "atom": _lib.clingo_ast_attribute_atom,
+    "atoms": _lib.clingo_ast_attribute_atoms,
+    "atom_type": _lib.clingo_ast_attribute_atom_type,
+    "bias": _lib.clingo_ast_attribute_bias,
+    "body": _lib.clingo_ast_attribute_body,
+    "code": _lib.clingo_ast_attribute_code,
+    "coefficient": _lib.clingo_ast_attribute_coefficient,
+    "comparison": _lib.clingo_ast_attribute_comparison,
+    "condition": _lib.clingo_ast_attribute_condition,
+    "csp": _lib.clingo_ast_attribute_csp,
+    "elements": _lib.clingo_ast_attribute_elements,
+    "external": _lib.clingo_ast_attribute_external,
+    "external_type": _lib.clingo_ast_attribute_external_type,
+    "function": _lib.clingo_ast_attribute_function,
+    "guard": _lib.clingo_ast_attribute_guard,
+    "guards": _lib.clingo_ast_attribute_guards,
+    "head": _lib.clingo_ast_attribute_head,
+    "id": _lib.clingo_ast_attribute_id,
+    "is_default": _lib.clingo_ast_attribute_is_default,
+    "left": _lib.clingo_ast_attribute_left,
+    "left_guard": _lib.clingo_ast_attribute_left_guard,
+    "literal": _lib.clingo_ast_attribute_literal,
+    "location": _lib.clingo_ast_attribute_location,
+    "modifier": _lib.clingo_ast_attribute_modifier,
+    "name": _lib.clingo_ast_attribute_name,
+    "node_u": _lib.clingo_ast_attribute_node_u,
+    "node_v": _lib.clingo_ast_attribute_node_v,
+    "operator": _lib.clingo_ast_attribute_operator,
+    "operator_name": _lib.clingo_ast_attribute_operator_name,
+    "operator_type": _lib.clingo_ast_attribute_operator_type,
+    "operators": _lib.clingo_ast_attribute_operators,
+    "parameters": _lib.clingo_ast_attribute_parameters,
+    "priority": _lib.clingo_ast_attribute_priority,
+    "right": _lib.clingo_ast_attribute_right,
+    "right_guard": _lib.clingo_ast_attribute_right_guard,
+    "script_type": _lib.clingo_ast_attribute_script_type,
+    "sequence_type": _lib.clingo_ast_attribute_sequence_type,
+    "sign": _lib.clingo_ast_attribute_sign,
+    "symbol": _lib.clingo_ast_attribute_symbol,
+    "term": _lib.clingo_ast_attribute_term,
+    "terms": _lib.clingo_ast_attribute_terms,
+    "tuple": _lib.clingo_ast_attribute_tuple,
+    "value": _lib.clingo_ast_attribute_value,
+    "var": _lib.clingo_ast_attribute_var,
+    "variable": _lib.clingo_ast_attribute_variable,
+    "weight": _lib.clingo_ast_attribute_weight}
 
 class AST:
     '''
@@ -559,8 +612,53 @@ class AST:
     this module. The parameters of the functions correspond to the nonterminals as
     given in the [grammar](.) above.
     '''
-    def __init__(self, type_: ASTType, **arguments: Any):
-        pass
+    #def __init__(self, type_: ASTType, **arguments: Any):
+    def __init__(self, rep):
+        super().__setattr__("_rep", rep)
+        # bool clingo_ast_attribute_clear(clingo_ast_t *ast, clingo_ast_attribute_t attribute);
+        # bool clingo_ast_attribute_set_number(clingo_ast_t *ast, clingo_ast_attribute_t attribute, int value);
+        # bool clingo_ast_attribute_set_location(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_location_t const *value);
+        # bool clingo_ast_attribute_set_string(clingo_ast_t *ast, clingo_ast_attribute_t attribute, char const *value);
+        # bool clingo_ast_attribute_set_ast(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_ast_t *value);
+        # bool clingo_ast_attribute_get_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, char const **value);
+        # bool clingo_ast_attribute_set_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, char const *value);
+        # bool clingo_ast_attribute_delete_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index);
+        # bool clingo_ast_attribute_size_string_array(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t *size);
+        # bool clingo_ast_attribute_insert_string_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, char const *value);
+        # bool clingo_ast_attribute_get_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, clingo_ast_t **value);
+        # bool clingo_ast_attribute_set_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, clingo_ast_t *value);
+        # bool clingo_ast_attribute_delete_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index);
+        # bool clingo_ast_attribute_size_ast_array(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t *size);
+        # bool clingo_ast_attribute_insert_ast_at(clingo_ast_t *ast, clingo_ast_attribute_t attribute, size_t index, clingo_ast_t *value);
+
+    @property
+    def ast_type(self):
+        return ASTType(_c_call('clingo_ast_type_t', _lib.clingo_ast_get_type, self._rep))
+
+    def __getattr__(self, name):
+        if not name in _attributes:
+            raise AttributeError(f'no attribute: {name}')
+        attr_id = _attributes[name]
+        if not _c_call('bool', _lib.clingo_ast_has_attribute, self._rep, attr_id):
+            raise AttributeError(f'no attribute: {name}')
+        attr_type = _c_call('clingo_ast_attribute_type_t', _lib.clingo_ast_attribute_type, self._rep, attr_id)
+        if attr_type == _lib.clingo_ast_attribute_type_empty:
+            return None
+        if attr_type == _lib.clingo_ast_attribute_type_string:
+            return _to_str(_c_call('char*', _lib.clingo_ast_attribute_get_string, self._rep, attr_id))
+        if attr_type == _lib.clingo_ast_attribute_type_number:
+            return _to_str(_c_call('int', _lib.clingo_ast_attribute_get_number, self._rep, attr_id))
+        if attr_type == _lib.clingo_ast_attribute_type_symbol:
+            return Symbol(_c_call('clingo_symbol_t', _lib.clingo_ast_attribute_get_symbol, self._rep, attr_id))
+        if attr_type == _lib.clingo_ast_attribute_type_location:
+            # bool clingo_ast_attribute_get_location(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_location_t *value);
+            raise RuntimeError("implement me")
+        if attr_type == _lib.clingo_ast_attribute_type_ast:
+            return AST(_c_call('clingo_ast_t*', _lib.clingo_ast_attribute_get_ast, self._rep, attr_id))
+        if attr_type == _lib.clingo_ast_attribute_type_string_array:
+            raise RuntimeError("implement me")
+        assert attr_type == _lib.clingo_ast_attribute_type_ast_array
+        raise RuntimeError("implement me")
 
     def items(self) -> List[Tuple[str,"AST"]]:
         '''
@@ -862,7 +960,18 @@ class UnaryOperator(metaclass=ABCMeta):
     Right-hand side representation of the operator.
     '''
 
-def parse_files(files: Iterable[str], callback: Callable[[AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
+@_ffi.def_extern(onerror=_cb_error_handler('data'))
+def _clingo_ast_callback(ast, data):
+    '''
+    Low-level ast callback.
+    '''
+    callback = _ffi.from_handle(data).data
+    callback(AST(ast))
+
+    return True
+
+def parse_files(files: Iterable[str], callback: Callable[[AST], None],
+                logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
     '''
     Parse the programs in the given files and return an abstract syntax tree for
     each statement via a callback.
@@ -890,8 +999,25 @@ def parse_files(files: Iterable[str], callback: Callable[[AST], None], logger: C
     --------
     ProgramBuilder
     '''
+    # pylint: disable=protected-access
+    if logger is not None:
+        c_logger_data = _ffi.new_handle(logger)
+        c_logger = _lib._clingo_logger_callback
+    else:
+        c_logger_data = _ffi.NULL
+        c_logger = _ffi.NULL
 
-def parse_program(program: str, callback: Callable[[AST], None], logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
+    error = _Error()
+    cb_data = _CBData(callback, error)
+    c_cb_data = _ffi.new_handle(cb_data)
+
+    _handle_error(_lib.clingo_ast_parse_files([ _ffi.new("char[]", f.encode()) for f in files ],
+                                              _lib._clingo_ast_callback, c_cb_data,
+                                              c_logger, c_logger_data,
+                                              message_limit))
+
+def parse_string(program: str, callback: Callable[[AST], None],
+                 logger: Callable[[MessageCode,str],None]=None, message_limit: int=20) -> None:
     '''
     Parse the given program and return an abstract syntax tree for each statement
     via a callback.
@@ -915,6 +1041,22 @@ def parse_program(program: str, callback: Callable[[AST], None], logger: Callabl
     --------
     ProgramBuilder
     '''
+    # pylint: disable=protected-access
+    if logger is not None:
+        c_logger_data = _ffi.new_handle(logger)
+        c_logger = _lib._clingo_logger_callback
+    else:
+        c_logger_data = _ffi.NULL
+        c_logger = _ffi.NULL
+
+    error = _Error()
+    cb_data = _CBData(callback, error)
+    c_cb_data = _ffi.new_handle(cb_data)
+
+    _handle_error(_lib.clingo_ast_parse_string(program.encode(),
+                                               _lib._clingo_ast_callback, c_cb_data,
+                                               c_logger, c_logger_data,
+                                               message_limit))
 
 class ProgramBuilder(ContextManager['ProgramBuilder']):
     '''
@@ -965,4 +1107,3 @@ class ProgramBuilder(ContextManager['ProgramBuilder']):
         -------
         None
         '''
-
