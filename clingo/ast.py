@@ -321,7 +321,11 @@ from .symbol import Symbol as Symbol_
 #     - the AST takes over the ast without incrementing the reference
 # - the Symbol constructor in this module overlaps with the name of the Symbol class
 # - there are some attribute names left that overlap with Python built-ins
-# - implement and decide where to put he program builder
+# - implement and decide where to put the program builder
+# - C++ implementation
+#   - to string
+#   - comparison
+#   - unpooling (maybe later)
 # - test everything
 
 class ASTType(Enum):
