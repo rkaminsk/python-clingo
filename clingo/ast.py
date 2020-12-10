@@ -314,6 +314,16 @@ from .symbol import Symbol as Symbol_
 
 # pylint: disable=protected-access,invalid-name
 
+# TODO:
+# - currently the reference count is increased once to often when an AST is created
+#   - possible solution:
+#     - all functions return asts with references already incremented
+#     - the AST takes over the ast without incrementing the reference
+# - the Symbol constructor in this module overlaps with the name of the Symbol class
+# - there are some attribute names left that overlap with Python built-ins
+# - implement and decide where to put he program builder
+# - test everything
+
 class ASTType(Enum):
     '''
     Enumeration of ast node types.
