@@ -3,8 +3,7 @@ Helper modules with utility functions and classes.
 """
 
 from typing import MutableSequence, Sequence, TypeVar, Optional
-
-Value = TypeVar('Value')
+from collections import abc
 
 class Slice:
     '''
@@ -25,11 +24,11 @@ class Slice:
                 if self._rec is None else
                 self._rec.rng(size)[self._slc])
 
-class SlicedSequence(Sequence[Value]):
+class SlicedSequence(abc.Sequence):
     '''
     Helper to slice sequences.
     '''
-    def __init__(self, seq: Sequence[Value], slc: Slice):
+    def __init__(self, seq: Sequence, slc: Slice):
         self._seq = seq
         self._slc = slc
         self._len = -1
@@ -62,11 +61,11 @@ class SlicedSequence(Sequence[Value]):
         return repr(list(self))
 
 
-class SlicedMutableSequence(SlicedSequence[Value], MutableSequence[Value]):
+class SlicedMutableSequence(SlicedSequence, abc.MutableSequence):
     '''
     Helper to slice sequences.
     '''
-    def __init__(self, seq: MutableSequence[Value], slc: Slice):
+    def __init__(self, seq: MutableSequence, slc: Slice):
         super().__init__(seq, slc)
 
     def __setitem__(self, index, ast):

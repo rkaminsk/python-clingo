@@ -301,185 +301,18 @@ statement = Rule
 ```
 '''
 
-from enum import Enum
-from typing import Any, Callable, ContextManager, Iterable, List, Sequence, Tuple
-from abc import ABCMeta
+from enum import Enum, IntEnum
+from typing import Any, Callable, ContextManager, Iterable, List, NamedTuple, Optional, Sequence, Tuple
+from collections import abc
 
 from ._internal import (_CBData, _Error,
                         _cb_error_handler, _c_call, _ffi, _handle_error, _lib, _to_str)
 from .util import Slice, SlicedMutableSequence
 from .core import MessageCode
 from .control import Control
+from .symbol import Symbol as Symbol_
 
-# It might be a good idea to implement the AST in C with only a few functions and enums:
-#
-# - Value: Union[int,str,Symbol,AST,List[str],List[AST]]
-# - AST.location() -> Location
-# - AST.type() -> ASTType
-# - AST.size() -> int
-# - AST.get_key(int) -> str
-# - AST.get_value(str) -> Value
-# - AST.set_item(str, Value) -> None
-# - AST.check() -> bool (to check if all required values are present)
-#
-# With this interface, the ast can be implemented easily in any dynamically
-# typed language. Ownership could be handled with shared pointers (requiring
-# users not to build cycles). Recursion depth should be no problem in typical
-# ASP programs.
-
-def Aggregate(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def AggregateGuard(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def BinaryOperation(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def BodyAggregate(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def BodyAggregateElement(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def BooleanConstant(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def CSPGuard(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def CSPLiteral(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def CSPProduct(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def CSPSum(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Comparison(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def ConditionalLiteral(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Defined(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Definition(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Disjoint(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def DisjointElement(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Disjunction(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Edge(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def External(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Function(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def HeadAggregate(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def HeadAggregateElement(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Heuristic(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Id(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Interval(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Literal(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Minimize(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Pool(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Program(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def ProjectAtom(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def ProjectSignature(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Rule(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Script(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def ShowSignature(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def ShowTerm(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Symbol(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def SymbolicAtom(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryAtom(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryAtomDefinition(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryAtomElement(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryDefinition(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryFunction(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryGuard(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryGuardDefinition(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryOperatorDefinition(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheorySequence(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryTermDefinition(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryUnparsedTerm(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def TheoryUnparsedTermElement(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def UnaryOperation(*args: Any, **kwargs: Any) -> Any:
-    pass
-
-def Variable(*args: Any, **kwargs: Any) -> Any:
-    pass
-
+# pylint: disable=protected-access,invalid-name
 
 class ASTType(Enum):
     '''
@@ -537,58 +370,217 @@ class ASTType(Enum):
     Defined = _lib.clingo_ast_type_defined
     TheoryDefinition = _lib.clingo_ast_type_theory_definition
 
-_attributes = {
-    "argument": _lib.clingo_ast_attribute_argument,
-    "arguments": _lib.clingo_ast_attribute_arguments,
-    "arity": _lib.clingo_ast_attribute_arity,
-    "atom": _lib.clingo_ast_attribute_atom,
-    "atoms": _lib.clingo_ast_attribute_atoms,
-    "atom_type": _lib.clingo_ast_attribute_atom_type,
-    "bias": _lib.clingo_ast_attribute_bias,
-    "body": _lib.clingo_ast_attribute_body,
-    "code": _lib.clingo_ast_attribute_code,
-    "coefficient": _lib.clingo_ast_attribute_coefficient,
-    "comparison": _lib.clingo_ast_attribute_comparison,
-    "condition": _lib.clingo_ast_attribute_condition,
-    "csp": _lib.clingo_ast_attribute_csp,
-    "elements": _lib.clingo_ast_attribute_elements,
-    "external": _lib.clingo_ast_attribute_external,
-    "external_type": _lib.clingo_ast_attribute_external_type,
-    "function": _lib.clingo_ast_attribute_function,
-    "guard": _lib.clingo_ast_attribute_guard,
-    "guards": _lib.clingo_ast_attribute_guards,
-    "head": _lib.clingo_ast_attribute_head,
-    "id": _lib.clingo_ast_attribute_id,
-    "is_default": _lib.clingo_ast_attribute_is_default,
-    "left": _lib.clingo_ast_attribute_left,
-    "left_guard": _lib.clingo_ast_attribute_left_guard,
-    "literal": _lib.clingo_ast_attribute_literal,
-    "location": _lib.clingo_ast_attribute_location,
-    "modifier": _lib.clingo_ast_attribute_modifier,
-    "name": _lib.clingo_ast_attribute_name,
-    "node_u": _lib.clingo_ast_attribute_node_u,
-    "node_v": _lib.clingo_ast_attribute_node_v,
-    "operator": _lib.clingo_ast_attribute_operator,
-    "operator_name": _lib.clingo_ast_attribute_operator_name,
-    "operator_type": _lib.clingo_ast_attribute_operator_type,
-    "operators": _lib.clingo_ast_attribute_operators,
-    "parameters": _lib.clingo_ast_attribute_parameters,
-    "priority": _lib.clingo_ast_attribute_priority,
-    "right": _lib.clingo_ast_attribute_right,
-    "right_guard": _lib.clingo_ast_attribute_right_guard,
-    "script_type": _lib.clingo_ast_attribute_script_type,
-    "sequence_type": _lib.clingo_ast_attribute_sequence_type,
-    "sign": _lib.clingo_ast_attribute_sign,
-    "symbol": _lib.clingo_ast_attribute_symbol,
-    "term": _lib.clingo_ast_attribute_term,
-    "terms": _lib.clingo_ast_attribute_terms,
-    "tuple": _lib.clingo_ast_attribute_tuple,
-    "value": _lib.clingo_ast_attribute_value,
-    "var": _lib.clingo_ast_attribute_var,
-    "variable": _lib.clingo_ast_attribute_variable,
-    "weight": _lib.clingo_ast_attribute_weight}
+class AggregateFunction(IntEnum):
+    '''
+    Enumeration of aggegate functions.
 
-class ASTSequence(Sequence['AST']):
+    Attributes
+    ----------
+    Count : AggregateFunction
+        The `#count` function.
+    Sum : AggregateFunction
+        The `#sum` function.
+    SumPlus : AggregateFunction
+        The `#sum+` function.
+    Min : AggregateFunction
+        The `#min` function.
+    Max : AggregateFunction
+        The `#max` function.
+    '''
+    Count = _lib.clingo_ast_aggregate_function_count
+    Max = _lib.clingo_ast_aggregate_function_max
+    Min = _lib.clingo_ast_aggregate_function_min
+    Sum = _lib.clingo_ast_aggregate_function_sum
+    SumPlus = _lib.clingo_ast_aggregate_function_sump
+
+class BinaryOperator(IntEnum):
+    '''
+    Enumeration of binary operators.
+
+    Attributes
+    ----------
+    XOr : BinaryOperator
+        For bitwise exclusive or.
+    Or : BinaryOperator
+        For bitwise or.
+    And : BinaryOperator
+        For bitwise and.
+    Plus : BinaryOperator
+        For arithmetic addition.
+    Minus : BinaryOperator
+        For arithmetic subtraction.
+    Multiplication : BinaryOperator
+        For arithmetic multipilcation.
+    Division : BinaryOperator
+        For arithmetic division.
+    Modulo : BinaryOperator
+        For arithmetic modulo.
+    Power : BinaryOperator
+        For arithmetic exponentiation.
+    '''
+    And = _lib.clingo_ast_binary_operator_and
+    Division = _lib.clingo_ast_binary_operator_division
+    Minus = _lib.clingo_ast_binary_operator_minus
+    Modulo = _lib.clingo_ast_binary_operator_modulo
+    Multiplication = _lib.clingo_ast_binary_operator_multiplication
+    Or = _lib.clingo_ast_binary_operator_or
+    Plus = _lib.clingo_ast_binary_operator_plus
+    Power = _lib.clingo_ast_binary_operator_power
+    XOr = _lib.clingo_ast_binary_operator_xor
+
+class ComparisonOperator(IntEnum):
+    '''
+    Enumeration of comparison operators.
+
+    Attributes
+    ----------
+    GreaterThan : ComparisonOperator
+        The `>` operator.
+    LessThan : ComparisonOperator
+        The `<` operator.
+    LessEqual : ComparisonOperator
+        The `<=` operator.
+    GreaterEqual : ComparisonOperator
+        The `>=` operator.
+    NotEqual : ComparisonOperator
+        The `!=` operator.
+    Equal : ComparisonOperator
+        The `=` operator
+    '''
+    Equal = _lib.clingo_ast_comparison_operator_equal
+    GreaterEqual = _lib.clingo_ast_comparison_operator_greater_equal
+    GreaterThan = _lib.clingo_ast_comparison_operator_greater_than
+    LessEqual = _lib.clingo_ast_comparison_operator_less_equal
+    LessThan = _lib.clingo_ast_comparison_operator_less_than
+    NotEqual = _lib.clingo_ast_comparison_operator_not_equal
+
+class ScriptType(IntEnum):
+    '''
+    Enumeration of theory atom types.
+
+    Attributes
+    ----------
+    Python : ScriptType
+        For Python code.
+    Lua : ScriptType
+        For Lua code.
+    '''
+    Lua = _lib.clingo_ast_script_type_lua
+    Python = _lib.clingo_ast_script_type_python
+
+class Sign(IntEnum):
+    '''
+    Enumeration of signs for literals.
+
+    Attributes
+    ----------
+    NoSign : Sign
+        For positive literals.
+    Negation : Sign
+        For negative literals (with prefix `not`).
+    DoubleNegation : Sign
+        For double negated literals (with prefix `not not`)
+    '''
+    DoubleNegation = _lib.clingo_ast_sign_double_negation
+    Negation = _lib.clingo_ast_sign_negation
+    NoSign = _lib.clingo_ast_sign_no_sign
+
+class TheoryAtomType(IntEnum):
+    '''
+    Enumeration of theory atom types.
+
+    `TheoryAtomType` objects have a readable string representation, implement
+    Python's rich comparison operators, and can be used as dictionary keys.
+
+    Furthermore, they cannot be constructed from Python. Instead the following
+    preconstructed class attributes are available:
+
+    Attributes
+    ----------
+    Any : TheoryAtomType
+        For atoms that can occur anywhere.
+    Body : TheoryAtomType
+        For atoms that can only occur in rule bodies.
+    Head : TheoryAtomType
+        For atoms that can only occur in rule heads.
+    Directive : TheoryAtomType
+        For atoms that can only occur in facts.
+    '''
+    Any = _lib.clingo_ast_theory_atom_definition_type_any
+    Body = _lib.clingo_ast_theory_atom_definition_type_body
+    Directive = _lib.clingo_ast_theory_atom_definition_type_directive
+    Head = _lib.clingo_ast_theory_atom_definition_type_head
+
+class TheoryOperatorType(IntEnum):
+    '''
+    Enumeration of operator types.
+
+    `TheoryOperatorType` objects have a readable string representation, implement
+    Python's rich comparison operators, and can be used as dictionary keys.
+
+    Furthermore, they cannot be constructed from Python. Instead the following
+    preconstructed class attributes are available:
+
+    Attributes
+    ----------
+    Unary : TheoryOperatorType
+        For unary operators.
+    BinaryLeft : TheoryOperatorType
+        For binary left associative operators.
+    BinaryRight : TheoryOperatorType
+        For binary right associative operator.
+    '''
+    BinaryLeft = _lib.clingo_ast_theory_operator_type_binary_left
+    BinaryRight = _lib.clingo_ast_theory_operator_type_binary_right
+    Unary = _lib.clingo_ast_theory_operator_type_unary
+
+class TheorySequenceType(IntEnum):
+    '''
+    Enumeration of theory term sequence types.
+
+    `TheorySequenceType` objects have a readable string representation, implement
+    Python's rich comparison operators, and can be used as dictionary keys.
+
+    Furthermore, they cannot be constructed from Python. Instead the following
+    preconstructed class attributes are available:
+
+    Attributes
+    ----------
+    Tuple : TheorySequenceType
+        For sequences enclosed in parenthesis.
+    List : TheorySequenceType
+        For sequences enclosed in brackets.
+    Set : TheorySequenceType
+        For sequences enclosed in braces.
+    '''
+    List = _lib.clingo_ast_theory_sequence_type_list
+    Set = _lib.clingo_ast_theory_sequence_type_set
+    Tuple = _lib.clingo_ast_theory_sequence_type_tuple
+
+class UnaryOperator(IntEnum):
+    '''
+    Enumeration of signs for literals.
+
+    `UnaryOperator` objects have a readable string representation, implement
+    Python's rich comparison operators, and can be used as dictionary keys.
+
+    Furthermore, they cannot be constructed from Python. Instead the following
+    preconstructed class attributes are available:
+
+    Attributes
+    ----------
+    Negation : UnaryOperator
+        For bitwise negation.
+    Minus : UnaryOperator
+        For unary minus and classical negation.
+    Absolute : UnaryOperator
+        For taking the absolute value.
+    '''
+    Absolute = _lib.clingo_ast_unary_operator_absolute
+    Minus = _lib.clingo_ast_unary_operator_minus
+    Negation = _lib.clingo_ast_unary_operator_negation
+
+class ASTSequence(abc.MutableSequence):
     def __init__(self, rep, attribute):
         self._rep = rep
         self._attribute = attribute
@@ -614,7 +606,7 @@ class ASTSequence(Sequence['AST']):
         for index in range(len(self)):
             yield AST(_c_call('clingo_ast_t*', _lib.clingo_ast_attribute_get_ast_at, self._rep, self._attribute, index))
 
-    def __setitem__(self, index, ast: 'AST'):
+    def __setitem__(self, index, ast):
         if isinstance(index, slice):
             raise TypeError('slicing not implemented')
         _handle_error(_lib.clingo_ast_attribute_set_ast_at(self._rep, self._attribute, index, ast._rep))
@@ -629,8 +621,8 @@ class ASTSequence(Sequence['AST']):
             raise IndexError('invalid index')
         _handle_error(_lib.clingo_ast_attribute_delete_ast_at(self._rep, self._attribute, index))
 
-    def insert(self, index, ast: 'AST'):
-        _handle_error(_lib.clingo_ast_attribute_insert_ast_at(self._rep, self._attribute, index, ast._rep))
+    def insert(self, index, value):
+        _handle_error(_lib.clingo_ast_attribute_insert_ast_at(self._rep, self._attribute, index, value._rep))
 
     def __str__(self):
         return str(list(self))
@@ -638,10 +630,10 @@ class ASTSequence(Sequence['AST']):
     def __repr__(self):
         return repr(list(self))
 
-class StrSequence(Sequence[str]):
+class StrSequence(abc.MutableSequence):
     def __init__(self, rep, attribute):
-        self._rep = rep
         self._attribute = attribute
+        self._rep = rep
         _lib.clingo_ast_acquire(self._rep)
 
     def __del__(self):
@@ -664,10 +656,10 @@ class StrSequence(Sequence[str]):
         for index in range(len(self)):
             yield _to_str(_c_call('char[]', _lib.clingo_ast_attribute_get_str_at, self._rep, self._attribute, index))
 
-    def __setitem__(self, index, val: str):
+    def __setitem__(self, index, value):
         if isinstance(index, slice):
             raise TypeError('slicing not implemented')
-        _handle_error(_lib.clingo_str_attribute_set_str_at(self._rep, self._attribute, index, val.encode()))
+        _handle_error(_lib.clingo_str_attribute_set_str_at(self._rep, self._attribute, index, value.encode()))
 
     def __delitem__(self, index):
         if isinstance(index, slice):
@@ -679,14 +671,42 @@ class StrSequence(Sequence[str]):
             raise IndexError('invalid index')
         _handle_error(_lib.clingo_ast_attribute_delete_str_at(self._rep, self._attribute, index))
 
-    def insert(self, index, val: str):
-        _handle_error(_lib.clingo_ast_attribute_insert_str_at(self._rep, self._attribute, index, val.encode()))
+    def insert(self, index, value):
+        _handle_error(_lib.clingo_ast_attribute_insert_str_at(self._rep, self._attribute, index, value.encode()))
 
     def __str__(self):
         return str(list(self))
 
     def __repr__(self):
         return repr(list(self))
+
+class Position(NamedTuple):
+    '''
+    Class to point to a position in a text file.
+    '''
+    filename: str
+    line: int
+    column: int
+
+class Location(NamedTuple):
+    '''
+    Class to point to a range in a text file.
+    '''
+    begin: Position
+    end: Position
+
+def _c_location(loc: Location):
+    return _ffi.new('clingo_location_t*', (_ffi.new('char const[]', loc.begin.filename.encode()),
+                                           _ffi.new('char const[]', loc.end.filename.encode()),
+                                           loc.begin.line,
+                                           loc.end.line,
+                                           loc.begin.column,
+                                           loc.end.column))
+
+def _py_location(rep):
+    return Location(
+        Position(_to_str(rep.begin_file), rep.begin_line, rep.begin_column),
+        Position(_to_str(rep.end_file), rep.end_line, rep.end_column))
 
 class AST:
     '''
@@ -696,16 +716,13 @@ class AST:
     structurally ignoring the location. They can also be used as dictionary keys.
     Their string representation corresponds to their gringo representation.
 
-    Implements: `Any`.
-
     Parameters
     ----------
-    type : ASTType
+    ast_type : ASTType
         The type of the onde.
     **arguments : Any
         Additionally, the functions takes an arbitrary number of keyword arguments.
-        These should contain the required fields of the node but can also be set
-        later.
+        These have to contain the required fields of the node.
 
     Notes
     -----
@@ -713,35 +730,31 @@ class AST:
     this module. The parameters of the functions correspond to the nonterminals as
     given in the [grammar](.) above.
     '''
-    #def __init__(self, type_: ASTType, **arguments: Any):
     def __init__(self, rep):
         super().__setattr__("_rep", rep)
+        _lib.clingo_ast_acquire(self._rep)
 
     def __del__(self):
         _lib.clingo_ast_release(self._rep)
 
-    @property
-    def ast_type(self):
-        return ASTType(_c_call('clingo_ast_type_t', _lib.clingo_ast_get_type, self._rep))
-
     def __getattr__(self, name):
-        if not name in _attributes:
-            raise AttributeError(f'no attribute: {name}')
-        attr_id = _attributes[name]
+        attr_id = getattr(_lib, f'clingo_ast_attribute_{name}')
         if not _c_call('bool', _lib.clingo_ast_has_attribute, self._rep, attr_id):
             raise AttributeError(f'no attribute: {name}')
         attr_type = _c_call('clingo_ast_attribute_type_t', _lib.clingo_ast_attribute_type, self._rep, attr_id)
-        if attr_type == _lib.clingo_ast_attribute_type_empty:
-            return None
         if attr_type == _lib.clingo_ast_attribute_type_string:
             return _to_str(_c_call('char*', _lib.clingo_ast_attribute_get_string, self._rep, attr_id))
         if attr_type == _lib.clingo_ast_attribute_type_number:
             return _to_str(_c_call('int', _lib.clingo_ast_attribute_get_number, self._rep, attr_id))
         if attr_type == _lib.clingo_ast_attribute_type_symbol:
-            return Symbol(_c_call('clingo_symbol_t', _lib.clingo_ast_attribute_get_symbol, self._rep, attr_id))
+            return Symbol_(_c_call('clingo_symbol_t', _lib.clingo_ast_attribute_get_symbol,
+                                                self._rep, attr_id))
         if attr_type == _lib.clingo_ast_attribute_type_location:
-            # bool clingo_ast_attribute_get_location(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_location_t *value);
-            raise RuntimeError("implement me")
+            return _py_location(_c_call('clingo_location_t', _lib.clingo_ast_attribute_get_location,
+                                        self._rep, attr_id))
+        if attr_type == _lib.clingo_ast_attribute_type_optional_ast:
+            rep = _c_call('clingo_ast_t*', _lib.clingo_ast_attribute_get_optional_ast, self._rep, attr_id)
+            return AST(rep) if rep != _ffi.NULL else None
         if attr_type == _lib.clingo_ast_attribute_type_ast:
             return AST(_c_call('clingo_ast_t*', _lib.clingo_ast_attribute_get_ast, self._rep, attr_id))
         if attr_type == _lib.clingo_ast_attribute_type_string_array:
@@ -749,314 +762,81 @@ class AST:
         assert attr_type == _lib.clingo_ast_attribute_type_ast_array
         return ASTSequence(self._rep, attr_id)
 
-    def __setattr__(self, name):
-        # bool clingo_ast_attribute_clear(clingo_ast_t *ast, clingo_ast_attribute_t attribute);
-        # bool clingo_ast_attribute_set_number(clingo_ast_t *ast, clingo_ast_attribute_t attribute, int value);
-        # bool clingo_ast_attribute_set_location(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_location_t const *value);
-        # bool clingo_ast_attribute_set_string(clingo_ast_t *ast, clingo_ast_attribute_t attribute, char const *value);
-        # bool clingo_ast_attribute_set_ast(clingo_ast_t *ast, clingo_ast_attribute_t attribute, clingo_ast_t *value);
-        # probably needs methods to clear arrays
-        raise RuntimeError('implement me!!!')
+    def __setattr__(self, name, value):
+        attr_id = getattr(_lib, f'clingo_ast_attribute_{name}')
+        if not _c_call('bool', _lib.clingo_ast_has_attribute, self._rep, attr_id):
+            raise AttributeError(f'no attribute: {name}')
+        attr_type = _c_call('clingo_ast_attribute_type_t', _lib.clingo_ast_attribute_type, self._rep, attr_id)
+        if attr_type == _lib.clingo_ast_attribute_type_string:
+            _handle_error(_lib.clingo_ast_attribute_set_string(self._rep, attr_id, value.encode()))
+        elif attr_type == _lib.clingo_ast_attribute_type_number:
+            _handle_error(_lib.clingo_ast_attribute_set_number(self._rep, attr_id, value))
+        elif attr_type == _lib.clingo_ast_attribute_type_symbol:
+            _handle_error(_lib.clingo_ast_attribute_set_number(self._rep, attr_id, value._rep))
+        elif attr_type == _lib.clingo_ast_attribute_type_location:
+            _handle_error(_lib.clingo_ast_attribute_set_location(self._rep, attr_id, _c_location(value)))
+        elif attr_type == _lib.clingo_ast_attribute_type_optional_ast:
+            _handle_error(_lib.clingo_ast_attribute_set_optional_ast(self._rep, attr_id,
+                          _ffi.NULL if value is None else value._rep))
+        elif attr_type == _lib.clingo_ast_attribute_type_ast:
+            _handle_error(_lib.clingo_ast_attribute_set_ast(self._rep, attr_id, value._rep))
+        elif attr_type == _lib.clingo_ast_attribute_type_string_array:
+            StrSequence(self._rep, attr_id)[:] = value
+        else:
+            assert attr_type == _lib.clingo_ast_attribute_type_ast_array
+            ASTSequence(self._rep, attr_id)[:] = value
 
-    def items(self) -> List[Tuple[str,"AST"]]:
+    def items(self) -> List[Tuple[str, Any]]:
         '''
-        items(self) -> List[Tuple[str,AST]]
-
         The list of items of the AST node.
 
         Returns
         -------
-        List[Tuple[str,AST]]
+        List[Tuple[str, Any]]
         '''
+        return [ (name, getattr(self, name)) for name in self.keys() ]
 
     def keys(self) -> List[str]:
         '''
-        keys(self) -> List[str]
-
         The list of keys of the AST node.
 
         Returns
         -------
         List[str]
         '''
+        cons = _lib.g_clingo_ast_constructors.constructors[self.ast_type.value]
+        names = _lib.g_clingo_ast_attribute_names.names
+        return [ _to_str(names[cons.arguments[j].attribute]) for j in range(cons.size) ]
 
-    def values(self) -> List["AST"]:
+    def values(self) -> List[Any]:
         '''
-        values(self) -> List[AST]
-
         The list of values of the AST node.
 
         Returns
         -------
-        List[AST]
+        List[Any]
         '''
+        return [ (getattr(self, name)) for name in self.keys() ]
 
-    child_keys: List[str]
-    '''
-    child_keys: List[str]
+    @property
+    def ast_type(self) -> ASTType:
+        '''
+        The type of the node.
+        '''
+        return ASTType(_c_call('clingo_ast_type_t', _lib.clingo_ast_get_type, self._rep))
 
-    List of names of all AST child nodes.
-
-    '''
-    type: "ASTType"
-    '''
-    type: ASTType
-
-    The type of the node.
-
-    '''
-
-class AggregateFunction(Enum):
-    '''
-    Enumeration of aggegate functions.
-
-    Attributes
-    ----------
-    Count : AggregateFunction
-        The `#count` function.
-    Sum : AggregateFunction
-        The `#sum` function.
-    SumPlus : AggregateFunction
-        The `#sum+` function.
-    Min : AggregateFunction
-        The `#min` function.
-    Max : AggregateFunction
-        The `#max` function.
-    '''
-    # Count: AggregateFunction
-    # Max: AggregateFunction
-    # Min: AggregateFunction
-    # Sum: AggregateFunction
-    # SumPlus: AggregateFunction
-
-class BinaryOperator(metaclass=ABCMeta):
-    '''
-    Enumeration of binary operators.
-
-    `BinaryOperator` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the
-    following preconstructed class attributes are available:
-
-    Attributes
-    ----------
-    XOr : BinaryOperator
-        For bitwise exclusive or.
-    Or : BinaryOperator
-        For bitwise or.
-    And : BinaryOperator
-        For bitwise and.
-    Plus : BinaryOperator
-        For arithmetic addition.
-    Minus : BinaryOperator
-        For arithmetic subtraction.
-    Multiplication : BinaryOperator
-        For arithmetic multipilcation.
-    Division : BinaryOperator
-        For arithmetic division.
-    Modulo : BinaryOperator
-        For arithmetic modulo.
-    Power : BinaryOperator
-        For arithmetic exponentiation.
-    '''
-    # And: BinaryOperator
-    # Division: BinaryOperator
-    # Minus: BinaryOperator
-    # Modulo: BinaryOperator
-    # Multiplication: BinaryOperator
-    # Or: BinaryOperator
-    # Plus: BinaryOperator
-    # Power: BinaryOperator
-    # XOr: BinaryOperator
-
-class ComparisonOperator(Enum):
-    '''
-    Enumeration of comparison operators.
-
-    Attributes
-    ----------
-    GreaterThan : ComparisonOperator
-        The `>` operator.
-    LessThan : ComparisonOperator
-        The `<` operator.
-    LessEqual : ComparisonOperator
-        The `<=` operator.
-    GreaterEqual : ComparisonOperator
-        The `>=` operator.
-    NotEqual : ComparisonOperator
-        The `!=` operator.
-    Equal : ComparisonOperator
-        The `=` operator
-    '''
-    # Equal: ComparisonOperator
-    # GreaterEqual: ComparisonOperator
-    # GreaterThan: ComparisonOperator
-    # LessEqual: ComparisonOperator
-    # LessThan: ComparisonOperator
-    # NotEqual: ComparisonOperator
-
-class ScriptType(metaclass=ABCMeta):
-    '''
-    Enumeration of theory atom types.
-
-    `ScriptType` objects have a readable string representation, implement Python's
-    rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Attributes
-    ----------
-    Python : ScriptType
-        For Python code.
-    Lua : ScriptType
-        For Lua code.
-    '''
-    # Lua: ScriptType
-    # Python: ScriptType
-
-class Sign(metaclass=ABCMeta):
-    '''
-    Enumeration of signs for literals.
-
-    `Sign` objects have a readable string representation, implement Python's rich
-    comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Attributes
-    ----------
-    NoSign : Sign
-        For positive literals.
-    Negation : Sign
-        For negative literals (with prefix `not`).
-    DoubleNegation : Sign
-        For double negated literals (with prefix `not not`)
-    '''
-    # DoubleNegation: Sign
-    # Negation: Sign
-    # NoSign: Sign
-
-class TheoryAtomType(metaclass=ABCMeta):
-    '''
-    Enumeration of theory atom types.
-
-    `TheoryAtomType` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Attributes
-    ----------
-    Any : TheoryAtomType
-        For atoms that can occur anywhere.
-    Body : TheoryAtomType
-        For atoms that can only occur in rule bodies.
-    Head : TheoryAtomType
-        For atoms that can only occur in rule heads.
-    Directive : TheoryAtomType
-        For atoms that can only occur in facts.
-    '''
-    # Any: TheoryAtomType
-    # Body: TheoryAtomType
-    # Directive: TheoryAtomType
-    # Head: TheoryAtomType
-
-class TheoryOperatorType(metaclass=ABCMeta):
-    '''
-    Enumeration of operator types.
-
-    `TheoryOperatorType` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Attributes
-    ----------
-    Unary : TheoryOperatorType
-        For unary operators.
-    BinaryLeft : TheoryOperatorType
-        For binary left associative operators.
-    BinaryRight : TheoryOperatorType
-        For binary right associative operator.
-    '''
-    # BinaryLeft: TheoryOperatorType
-    # BinaryRight: TheoryOperatorType
-    # Unary: TheoryOperatorType
-
-class TheorySequenceType(metaclass=ABCMeta):
-    '''
-    Enumeration of theory term sequence types.
-
-    `TheorySequenceType` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Attributes
-    ----------
-    Tuple : TheorySequenceType
-        For sequences enclosed in parenthesis.
-    List : TheorySequenceType
-        For sequences enclosed in brackets.
-    Set : TheorySequenceType
-        For sequences enclosed in braces.
-    '''
-    # List: TheorySequenceType
-    # Set: TheorySequenceType
-    # Tuple: TheorySequenceType
-    left_hand_side: str
-    '''
-    left_hand_side: str
-
-    Left-hand side representation of the sequence.
-    '''
-    right_hand_side: str
-    '''
-    right_hand_side: str
-
-    Right-hand side representation of the sequence.
-    '''
-
-class UnaryOperator(metaclass=ABCMeta):
-    '''
-    Enumeration of signs for literals.
-
-    `UnaryOperator` objects have a readable string representation, implement
-    Python's rich comparison operators, and can be used as dictionary keys.
-
-    Furthermore, they cannot be constructed from Python. Instead the following
-    preconstructed class attributes are available:
-
-    Attributes
-    ----------
-    Negation : UnaryOperator
-        For bitwise negation.
-    Minus : UnaryOperator
-        For unary minus and classical negation.
-    Absolute : UnaryOperator
-        For taking the absolute value.
-    '''
-    # Absolute: UnaryOperator
-    # Minus: UnaryOperator
-    # Negation: UnaryOperator
-    left_hand_side: str
-    '''
-    left_hand_side: str
-
-    Left-hand side representation of the operator.
-    '''
-    right_hand_side: str
-    '''
-    right_hand_side: str
-
-    Right-hand side representation of the operator.
-    '''
+    @property
+    def child_keys(self) -> List[str]:
+        '''
+        List of attribute names containing ASTs.
+        '''
+        cons = _lib.g_clingo_ast_constructors.constructors[self.ast_type.value]
+        names = _lib.g_clingo_ast_attribute_names.names
+        return [ _to_str(names[cons.arguments[j].attribute])
+                 for j in range(cons.size)
+                 if cons.arguments[j].type in (_lib.clingo_ast_attribute_type_ast,
+                                               _lib.clingo_ast_attribute_type_optional_ast,
+                                               _lib.clingo_ast_attribute_type_ast_array) ]
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
 def _clingo_ast_callback(ast, data):
@@ -1097,7 +877,6 @@ def parse_files(files: Iterable[str], callback: Callable[[AST], None],
     --------
     ProgramBuilder
     '''
-    # pylint: disable=protected-access
     if logger is not None:
         c_logger_data = _ffi.new_handle(logger)
         c_logger = _lib._clingo_logger_callback
@@ -1139,7 +918,6 @@ def parse_string(program: str, callback: Callable[[AST], None],
     --------
     ProgramBuilder
     '''
-    # pylint: disable=protected-access
     if logger is not None:
         c_logger_data = _ffi.new_handle(logger)
         c_logger = _lib._clingo_logger_callback
@@ -1205,3 +983,666 @@ class ProgramBuilder(ContextManager['ProgramBuilder']):
         -------
         None
         '''
+
+def Id(location: Location, name: str) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Id`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_id, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode())))
+    return AST(c_ast[0])
+
+def Variable(location: Location, name: str) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Variable`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_variable, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode())))
+    return AST(c_ast)
+
+def Symbol(location: Location, symbol: Symbol_) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Symbol`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_symbol, c_ast,
+        _c_location(location),
+        symbol._rep))
+    return AST(c_ast)
+
+def UnaryOperation(location: Location, operator: int, argument: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.UnaryOperation`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_unary_operation, c_ast,
+        _c_location(location),
+        _ffi.cast('int', operator),
+        argument._rep))
+    return AST(c_ast)
+
+def BinaryOperation(location: Location, operator: int, left: AST, right: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.BinaryOperation`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_binary_operation, c_ast,
+        _c_location(location),
+        _ffi.cast('int', operator),
+        left._rep,
+        right._rep))
+    return AST(c_ast)
+
+def Interval(location: Location, left: AST, right: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Interval`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_interval, c_ast,
+        _c_location(location),
+        left._rep,
+        right._rep))
+    return AST(c_ast)
+
+def Function(location: Location, name: str, arguments: Sequence[AST], external: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Function`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_function, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in arguments ]),
+        _ffi.cast('size_t', len(arguments)),
+        _ffi.cast('int', external)))
+    return AST(c_ast)
+
+def Pool(location: Location, arguments: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Pool`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_pool, c_ast,
+        _c_location(location),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in arguments ]),
+        _ffi.cast('size_t', len(arguments))))
+    return AST(c_ast)
+
+def CspProduct(location: Location, coefficient: AST, variable: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.CspProduct`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_csp_product, c_ast,
+        _c_location(location),
+        coefficient._rep,
+        variable._rep))
+    return AST(c_ast)
+
+def CspSum(location: Location, coefficient: AST, variable: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.CspSum`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_csp_sum, c_ast,
+        _c_location(location),
+        coefficient._rep,
+        variable._rep))
+    return AST(c_ast)
+
+def CspGuard(location: Location, comparison: int, term: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.CspGuard`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_csp_guard, c_ast,
+        _c_location(location),
+        _ffi.cast('int', comparison),
+        term._rep))
+    return AST(c_ast)
+
+def BooleanConstant(location: Location, value: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.BooleanConstant`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_boolean_constant, c_ast,
+        _c_location(location),
+        _ffi.cast('int', value)))
+    return AST(c_ast)
+
+def SymbolicAtom(term: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.SymbolicAtom`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_symbolic_atom, c_ast,
+        term._rep))
+    return AST(c_ast)
+
+def Comparison(comparison: int, left: AST, right: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Comparison`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_comparison, c_ast,
+        _ffi.cast('int', comparison),
+        left._rep,
+        right._rep))
+    return AST(c_ast)
+
+def CspLiteral(location: Location, term: AST, guards: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.CspLiteral`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_csp_literal, c_ast,
+        _c_location(location),
+        term._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in guards ]),
+        _ffi.cast('size_t', len(guards))))
+    return AST(c_ast)
+
+def AggregateGuard(comparison: int, term: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.AggregateGuard`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_aggregate_guard, c_ast,
+        _ffi.cast('int', comparison),
+        term._rep))
+    return AST(c_ast)
+
+def ConditionalLiteral(location: Location, literal: AST, condition: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.ConditionalLiteral`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_conditional_literal, c_ast,
+        _c_location(location),
+        literal._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
+        _ffi.cast('size_t', len(condition))))
+    return AST(c_ast)
+
+def Aggregate(location: Location, left_guard: Optional[AST], elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Aggregate`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_aggregate, c_ast,
+        _c_location(location),
+        _ffi.NULL if left_guard is None else left_guard._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
+        _ffi.cast('size_t', len(elements)),
+        _ffi.NULL if right_guard is None else right_guard._rep))
+    return AST(c_ast)
+
+def BodyAggregateElement(tuple: Sequence[AST], condition: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.BodyAggregateElement`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_body_aggregate_element, c_ast,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
+        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
+        _ffi.cast('size_t', len(condition))))
+    return AST(c_ast)
+
+def BodyAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.BodyAggregate`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_body_aggregate, c_ast,
+        _c_location(location),
+        _ffi.NULL if left_guard is None else left_guard._rep,
+        _ffi.cast('int', function),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
+        _ffi.cast('size_t', len(elements)),
+        _ffi.NULL if right_guard is None else right_guard._rep))
+    return AST(c_ast)
+
+def HeadAggregateElement(tuple: Sequence[AST], condition: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.HeadAggregateElement`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_head_aggregate_element, c_ast,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
+        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
+        _ffi.cast('size_t', len(condition))))
+    return AST(c_ast)
+
+def HeadAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.HeadAggregate`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_head_aggregate, c_ast,
+        _c_location(location),
+        _ffi.NULL if left_guard is None else left_guard._rep,
+        _ffi.cast('int', function),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
+        _ffi.cast('size_t', len(elements)),
+        _ffi.NULL if right_guard is None else right_guard._rep))
+    return AST(c_ast)
+
+def Disjunction(location: Location, elements: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Disjunction`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_disjunction, c_ast,
+        _c_location(location),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
+        _ffi.cast('size_t', len(elements))))
+    return AST(c_ast)
+
+def DisjointElement(location: Location, tuple: Sequence[AST], term: AST, condition: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.DisjointElement`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_disjoint_element, c_ast,
+        _c_location(location),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
+        _ffi.cast('size_t', len(tuple)),
+        term._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
+        _ffi.cast('size_t', len(condition))))
+    return AST(c_ast)
+
+def Disjoint(location: Location, elements: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Disjoint`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_disjoint, c_ast,
+        _c_location(location),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
+        _ffi.cast('size_t', len(elements))))
+    return AST(c_ast)
+
+def TheorySequence(location: Location, sequence_type: int, terms: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheorySequence`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_sequence, c_ast,
+        _c_location(location),
+        _ffi.cast('int', sequence_type),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms))))
+    return AST(c_ast)
+
+def TheoryFunction(location: Location, name: str, terms: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryFunction`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_function, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms))))
+    return AST(c_ast)
+
+def TheoryUnparsedTermElement(operators: Sequence[str], term: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryUnparsedTermElement`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    c_operators = [ _ffi.new('char[]', x.encode()) for x in operators ]
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_unparsed_term_element, c_ast,
+        _ffi.new('char*[]', c_operators),
+        _ffi.cast('size_t', len(operators)),
+        term._rep))
+    return AST(c_ast)
+
+def TheoryUnparsedTerm(location: Location, elements: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryUnparsedTerm`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_unparsed_term, c_ast,
+        _c_location(location),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
+        _ffi.cast('size_t', len(elements))))
+    return AST(c_ast)
+
+def TheoryGuard(operator_name: str, term: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryGuard`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_guard, c_ast,
+        _ffi.new('char const[]', operator_name.encode()),
+        term._rep))
+    return AST(c_ast)
+
+def TheoryAtomElement(tuple: Sequence[AST], condition: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryAtomElement`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_atom_element, c_ast,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
+        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
+        _ffi.cast('size_t', len(condition))))
+    return AST(c_ast)
+
+def TheoryAtom(tuple: Sequence[AST], term: AST, elements: Sequence[AST], guard: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryAtom`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_atom, c_ast,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
+        _ffi.cast('size_t', len(tuple)),
+        term._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
+        _ffi.cast('size_t', len(elements)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in guard ]),
+        _ffi.cast('size_t', len(guard))))
+    return AST(c_ast)
+
+def Literal(location: Location, sign: int, atom: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Literal`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_literal, c_ast,
+        _c_location(location),
+        _ffi.cast('int', sign),
+        atom._rep))
+    return AST(c_ast)
+
+def TheoryOperatorDefinition(location: Location, name: str, priority: int, operator_type: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryOperatorDefinition`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_operator_definition, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.cast('int', priority),
+        _ffi.cast('int', operator_type)))
+    return AST(c_ast)
+
+def TheoryTermDefinition(location: Location, name: str, operators: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryTermDefinition`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_term_definition, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in operators ]),
+        _ffi.cast('size_t', len(operators))))
+    return AST(c_ast)
+
+def TheoryGuardDefinition(operators: Sequence[str], term: str) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryGuardDefinition`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    c_operators = [ _ffi.new('char[]', x.encode()) for x in operators ]
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_guard_definition, c_ast,
+        _ffi.new('char*[]', c_operators),
+        _ffi.cast('size_t', len(operators)),
+        _ffi.new('char const[]', term.encode())))
+    return AST(c_ast)
+
+def TheoryAtomDefinition(location: Location, atom_type: int, name: str, arity: int, elements: Sequence[str], guard: Optional[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryAtomDefinition`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    c_elements = [ _ffi.new('char[]', x.encode()) for x in elements ]
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_atom_definition, c_ast,
+        _c_location(location),
+        _ffi.cast('int', atom_type),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.cast('int', arity),
+        _ffi.new('char*[]', c_elements),
+        _ffi.cast('size_t', len(elements)),
+        _ffi.NULL if guard is None else guard._rep))
+    return AST(c_ast)
+
+def Rule(location: Location, head: AST, body: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Rule`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_rule, c_ast,
+        _c_location(location),
+        head._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
+        _ffi.cast('size_t', len(body))))
+    return AST(c_ast)
+
+def Definition(location: Location, name: str, value: AST, is_default: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Definition`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_definition, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        value._rep,
+        _ffi.cast('int', is_default)))
+    return AST(c_ast)
+
+def ShowSignature(location: Location, name: str, arity: int, sign: int, csp: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.ShowSignature`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_show_signature, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.cast('int', arity),
+        _ffi.cast('int', sign),
+        _ffi.cast('int', csp)))
+    return AST(c_ast)
+
+def ShowTerm(location: Location, term: AST, body: Sequence[AST], csp: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.ShowTerm`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_show_term, c_ast,
+        _c_location(location),
+        term._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
+        _ffi.cast('size_t', len(body)),
+        _ffi.cast('int', csp)))
+    return AST(c_ast)
+
+def Minimize(location: Location, weight: AST, priority: int, tuple: Sequence[AST], body: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Minimize`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_minimize, c_ast,
+        _c_location(location),
+        weight._rep,
+        _ffi.cast('int', priority),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
+        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
+        _ffi.cast('size_t', len(body))))
+    return AST(c_ast)
+
+def Script(location: Location, script_type: int, code: str) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Script`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_script, c_ast,
+        _c_location(location),
+        _ffi.cast('int', script_type),
+        _ffi.new('char const[]', code.encode())))
+    return AST(c_ast)
+
+def Program(location: Location, name: str, parameters: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Program`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_program, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in parameters ]),
+        _ffi.cast('size_t', len(parameters))))
+    return AST(c_ast)
+
+def External(location: Location, atom: AST, body: Sequence[AST], external_type: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.External`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_external, c_ast,
+        _c_location(location),
+        atom._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
+        _ffi.cast('size_t', len(body)),
+        external_type._rep))
+    return AST(c_ast)
+
+def Edge(location: Location, node_u: AST, node_v: AST, body: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Edge`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_edge, c_ast,
+        _c_location(location),
+        node_u._rep,
+        node_v._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
+        _ffi.cast('size_t', len(body))))
+    return AST(c_ast)
+
+def Heuristic(location: Location, atom: AST, body: Sequence[AST], bias: AST, priority: AST, modifier: AST) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Heuristic`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_heuristic, c_ast,
+        _c_location(location),
+        atom._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
+        _ffi.cast('size_t', len(body)),
+        bias._rep,
+        priority._rep,
+        modifier._rep))
+    return AST(c_ast)
+
+def ProjectAtom(location: Location, atom: AST, body: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.ProjectAtom`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_project_atom, c_ast,
+        _c_location(location),
+        atom._rep,
+        _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
+        _ffi.cast('size_t', len(body))))
+    return AST(c_ast)
+
+def ProjectSignature(location: Location, name: str, arity: int, sign: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.ProjectSignature`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_project_signature, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.cast('int', arity),
+        _ffi.cast('int', sign)))
+    return AST(c_ast)
+
+def Defined(location: Location, name: str, arity: int, sign: int) -> AST:
+    '''
+    Construct an AST node of type `ASTType.Defined`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_defined, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.cast('int', arity),
+        _ffi.cast('int', sign)))
+    return AST(c_ast)
+
+def TheoryDefinition(location: Location, name: str, terms: Sequence[AST], atoms: Sequence[AST]) -> AST:
+    '''
+    Construct an AST node of type `ASTType.TheoryDefinition`.
+    '''
+    c_ast = _ffi.new('clingo_ast_t**')
+    _handle_error(_lib.clingo_ast_build(
+        _lib.clingo_ast_type_theory_definition, c_ast,
+        _c_location(location),
+        _ffi.new('char const[]', name.encode()),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in atoms ]),
+        _ffi.cast('size_t', len(atoms))))
+    return AST(c_ast)
