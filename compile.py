@@ -58,9 +58,9 @@ cnt.append('extern "Python" bool _clingo_ast_callback(clingo_ast_t const *, void
 ffi.set_source(
     '_clingo',
     '#include <clingo.h>',
-    include_dirs=['/home/kaminski/.local/opt/potassco/release/include'],
-    library_dirs=['/home/kaminski/.local/opt/potassco/release/lib'],
-    extra_link_args=['-Wl,-rpath=/home/kaminski/.local/opt/potassco/release/lib'],
+    include_dirs=['/home/kaminski/.local/opt/potassco/debug/include'],
+    library_dirs=['/home/kaminski/.local/opt/potassco/debug/lib'],
+    extra_link_args=['-Wl,-rpath=/home/kaminski/.local/opt/potassco/debug/lib'],
     libraries=['clingo'])
 ffi.cdef(''.join(cnt))
 ffi.compile()

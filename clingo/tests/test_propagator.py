@@ -37,6 +37,7 @@ class TestPropagatorControl(Propagator):
         self._case.assertGreaterEqual(len(list(trail)), 1)
         self._case.assertEqual(trail[trail.begin(lvl)], -self._lit_a)
         self._case.assertEqual(list(trail[trail.begin(lvl):trail.end(lvl)]), [-self._lit_a])
+        print('call decision 1')
         self._case.assertEqual(ass.decision(lvl), -self._lit_a)
         self._case.assertEqual(control.thread_id, 0)
         self._case.assertTrue(control.has_watch(-self._lit_a))
@@ -44,10 +45,8 @@ class TestPropagatorControl(Propagator):
         self._case.assertFalse(control.add_clause([self._lit_a]))
 
     def undo(self, thread_id, assignment, changes):
-        lvl = assignment.decision_level
         self._case.assertEqual(thread_id, 0)
         self._case.assertIn(-self._lit_a, changes)
-        self._case.assertEqual(assignment.decision(lvl), -self._lit_a)
 
 class TestPropagatorInit(Propagator):
     '''

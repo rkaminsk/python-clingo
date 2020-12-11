@@ -7,11 +7,11 @@ from traceback import print_exception
 import sys
 from _clingo import ffi as _ffi, lib as _lib # type: ignore # pylint: disable=no-name-in-module
 
-def _str(f_size, f_str, *args):
+def _str(f_size, f_str, *args, handler=None):
     p_size = _ffi.new('size_t*')
-    f_size(*args, p_size)
+    _handle_error(f_size(*args, p_size), handler)
     p_str = _ffi.new('char[]', p_size[0])
-    f_str(*args, p_str, p_size[0])
+    _handle_error(f_str(*args, p_str, p_size[0]), handler)
     return _ffi.string(p_str).decode()
 
 def _c_call(c_type, c_fun, *args, handler=None):

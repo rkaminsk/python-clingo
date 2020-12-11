@@ -43,7 +43,7 @@ def generate_parameter(name, idx):
     if idx == _lib.clingo_ast_attribute_type_string:
         return [f"_ffi.new('char const[]', {name}.encode())"]
     if idx == _lib.clingo_ast_attribute_type_symbol:
-        return [f'{name}._rep']
+        return [f"_ffi.cast('clingo_symbol_t', {name}._rep)"]
     if idx == _lib.clingo_ast_attribute_type_location:
         return [f'_c_location({name})']
     if idx == _lib.clingo_ast_attribute_type_ast:
@@ -82,15 +82,15 @@ def generate():
         sys.stdout.write("    '''\n")
         parameters, aux = generate_parameters(constructor)
         parameters_str = "".join(f', {a}' for a in parameters)
-        sys.stdout.write(f"    c_ast = _ffi.new('clingo_ast_t**')\n")
+        sys.stdout.write(f"    p_ast = _ffi.new('clingo_ast_t**')\n")
         for x in aux:
             sys.stdout.write(f"    {x}\n")
         sys.stdout.write(f"    _handle_error(_lib.clingo_ast_build(\n")
-        sys.stdout.write(f"        _lib.clingo_ast_type_{c_name}, c_ast")
+        sys.stdout.write(f"        _lib.clingo_ast_type_{c_name}, p_ast")
         for param in parameters:
             sys.stdout.write(f",\n        {param}")
         sys.stdout.write(f"))\n")
 
-        sys.stdout.write(f"    return AST(c_ast)\n\n")
+        sys.stdout.write(f"    return AST(p_ast[0])\n\n")
 
 generate()
