@@ -2,10 +2,6 @@
 Tests for the ast module.
 
 TODO:
-- test comparison and hashing
-- test locations
-- test ast class
-- test ast and str sequences
 - test program builder
 '''
 from unittest import TestCase
@@ -14,7 +10,10 @@ from collections.abc import Sequence
 from copy import copy, deepcopy
 
 from .. import ast
-from ..ast import AST, parse_string
+from ..ast import (AST, ASTSequence, Id, Location, Program, Position, StrSequence, SymbolicTerm,
+                   TheoryUnparsedTermElement,
+                   parse_string)
+from ..symbol import Function
 
 class TestAST(TestCase):
     '''
@@ -29,6 +28,13 @@ class TestAST(TestCase):
         cons = getattr(ast, cons_name)
         args = dict(node.items())
 
+        def to_list(val):
+            return list(val) if isinstance(val, Sequence) else val
+
+        items = [ to_list(val) for key, val in node.items() ]
+        zipped = [ to_list(val) for key, val in zip(node.keys(), node.values()) ]
+        self.assertEqual(items, zipped)
+
         for key in node.child_keys:
             if isinstance(args[key], Sequence):
                 args[key] = [ self._deepcopy(child) for child in args[key] ]
@@ -37,10 +43,19 @@ class TestAST(TestCase):
 
         cpy = cons(**args)
         self.assertEqual(cpy, node)
+
+        for key in node.keys():
+            setattr(cpy, key, getattr(cpy, key))
+
+        cpz = copy(cpy)
+        for key in node.keys():
+            setattr(cpy, key, getattr(cpz, key))
+
+        self.assertEqual(cpy, node)
+
         return cpy
 
     def _str(self, s, alt=None):
-        # TODO: This function should also pass asts back to the parser.
         prg = []
         parse_string(s, prg.append)
         cpy = copy(deepcopy(self._deepcopy(prg[-1])))
@@ -251,3 +266,68 @@ class TestAST(TestCase):
                            &d/0: t, { }, t, any;
                            &e/0: t, { =, !=, + }, t, any
                          }."""))
+
+    def test_compare(self):
+        """
+        Test comparison and hashing.
+        """
+        pos = Position("<string>", 1, 1)
+        loc = Location(pos, pos)
+        x = Id(location=loc, name="x")
+        y = Id(location=Location(pos, Position("<string>", 1, 2)), name="x")
+        z = Id(location=loc, name="z")
+        self.assertEqual(x, y)
+        self.assertEqual(x, x)
+        self.assertNotEqual(x, z)
+        self.assertEqual(hash(x), hash(x))
+        self.assertEqual(hash(x), hash(y))
+        self.assertNotEqual(hash(x), hash(z))
+        self.assertLess(x, z)
+        self.assertNotEqual(x, z)
+        self.assertGreater(z, x)
+        self.assertLessEqual(y, x)
+        self.assertLessEqual(x, y)
+        self.assertGreaterEqual(y, x)
+        self.assertGreaterEqual(x, y)
+
+    def test_ast_sequence(self):
+        """
+        Test ast sequences.
+        """
+        pos = Position("<string>", 1, 1)
+        loc = Location(pos, pos)
+        lst = [Id(loc, "x"), Id(loc, "y"), Id(loc, "z")]
+        prg = Program(loc, "p", lst)
+        seq = prg.parameters
+        self.assertIsInstance(seq, ASTSequence)
+        self.assertEqual(len(seq), 3)
+        self.assertEqual(list(seq), lst)
+        self.assertEqual(seq[0], lst[0])
+        seq.insert(0, Id(loc, "i"))
+        self.assertEqual(list(seq), [Id(loc, "i")] + lst)
+        seq.insert(0, seq[3])
+        self.assertEqual(list(seq), [Id(loc, "z"), Id(loc, "i")] + lst)
+        del seq[2]
+        self.assertEqual(list(seq), [Id(loc, "z"), Id(loc, "i")] + lst[1:])
+
+    def test_str_sequence(self):
+        """
+        Test ast sequences.
+        """
+        pos = Position("<string>", 1, 1)
+        loc = Location(pos, pos)
+
+        lst = ["x", "y", "z"]
+        sym = SymbolicTerm(loc, Function("a"))
+        tue = TheoryUnparsedTermElement(lst, sym)
+        seq = tue.operators
+        self.assertIsInstance(seq, StrSequence)
+        self.assertEqual(len(seq), 3)
+        self.assertEqual(list(seq), lst)
+        self.assertEqual(seq[0], lst[0])
+        seq.insert(0, "i")
+        self.assertEqual(list(seq), ["i"] + lst)
+        seq.insert(0, seq[3])
+        self.assertEqual(list(seq), ["z", "i"] + lst)
+        del seq[2]
+        self.assertEqual(list(seq), ["z", "i"] + lst[1:])

@@ -52,7 +52,7 @@ def generate_parameter(name, idx):
     if idx == _lib.clingo_ast_attribute_type_symbol:
         return [f"_ffi.cast('clingo_symbol_t', {name}._rep)"]
     if idx == _lib.clingo_ast_attribute_type_location:
-        return [f'_c_location({name})']
+        return [f'c_{name}[0]']
     if idx == _lib.clingo_ast_attribute_type_ast:
         return [f'{name}._rep']
     if idx == _lib.clingo_ast_attribute_type_optional_ast:
@@ -65,6 +65,8 @@ def generate_parameter(name, idx):
 def generate_aux(name, idx):
     if idx == _lib.clingo_ast_attribute_type_string_array:
         return [f"c_{name} = [ _ffi.new('char[]', x.encode()) for x in {name} ]"]
+    if idx == _lib.clingo_ast_attribute_type_location:
+        return [f"c_{name} = _c_location({name})"]
     return []
 
 def generate_parameters(constructor):

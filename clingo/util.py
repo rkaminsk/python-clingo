@@ -2,8 +2,10 @@
 Helper modules with utility functions and classes.
 """
 
-from typing import MutableSequence, Sequence, TypeVar, Optional
+from typing import MutableSequence, Sequence, Optional
 from collections import abc
+
+# pylint: disable=too-many-ancestors
 
 class Slice:
     '''
@@ -78,5 +80,5 @@ class SlicedMutableSequence(SlicedSequence, abc.MutableSequence):
             raise TypeError('slicing not implemented')
         del self._seq[self._rng[index]]
 
-    def insert(self, index, ast):
-        self._seq[self._rng[index]] = ast
+    def insert(self, index, value):
+        self._seq[self._rng[index]] = value
