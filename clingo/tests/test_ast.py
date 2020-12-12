@@ -2,11 +2,13 @@
 Tests for the ast module.
 
 TODO:
-- test comparison
+- test comparison and hashing
 - test locations
 - test copying
 - test the constructors
 - test program builder
+- test ast class
+- test ast and str sequences
 '''
 from unittest import TestCase
 from textwrap import dedent

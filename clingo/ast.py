@@ -722,19 +722,11 @@ class AST:
     structurally ignoring the location. They can also be used as dictionary keys.
     Their string representation corresponds to their gringo representation.
 
-    Parameters
-    ----------
-    ast_type : ASTType
-        The type of the onde.
-    **arguments : Any
-        Additionally, the functions takes an arbitrary number of keyword arguments.
-        These have to contain the required fields of the node.
-
     Notes
     -----
-    It is also possible to create AST nodes using one of the functions provided in
-    this module. The parameters of the functions correspond to the nonterminals as
-    given in the [grammar](.) above.
+    AST nodes using can be constructed using one of the functions provided in
+    this module. The parameters of the functions correspond to the types given
+    in the description of the `clingo.ast` module.
     '''
     def __init__(self, rep):
         super().__setattr__("_rep", rep)
