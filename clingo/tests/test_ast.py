@@ -10,10 +10,11 @@ from collections.abc import Sequence
 from copy import copy, deepcopy
 
 from .. import ast
-from ..ast import (AST, ASTSequence, Id, Location, Program, Position, StrSequence, SymbolicTerm,
-                   TheoryUnparsedTermElement,
+from ..ast import (AST, ASTSequence, Id, Location, Program, ProgramBuilder, Position, StrSequence,
+                   SymbolicTerm, TheoryUnparsedTermElement,
                    parse_string)
 from ..symbol import Function
+from ..control import Control
 
 class TestAST(TestCase):
     '''
@@ -23,6 +24,9 @@ class TestAST(TestCase):
         '''
         This functions tests manual deep copying of ast nodes using all the
         constructor functions in the ast module.
+
+        Since this functions visits all possible AST nodes, further
+        functionality of the AST is tested here.
         '''
         cons_name = str(node.ast_type).split(".")[1]
         cons = getattr(ast, cons_name)
@@ -64,6 +68,10 @@ class TestAST(TestCase):
         prg = []
         parse_string(str(cpy), prg.append)
         self.assertEqual(str(prg[-1]), s if alt is None else alt)
+
+        # ctl = Control()
+        # with ProgramBuilder(ctl) as bld:
+        #    bld.add(prg[-1])
 
     def test_terms(self):
         '''

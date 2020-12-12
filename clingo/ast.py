@@ -1010,7 +1010,7 @@ class ProgramBuilder(ContextManager['ProgramBuilder']):
         >>> import clingo
         >>> ctl = clingo.Control()
         >>> prg = "a."
-        >>> with ctl.builder() as bld:
+        >>> with ProgramBuilder(ctl) as bld:
         ...    clingo.parse_program(prg, lambda stm: bld.add(stm))
         ...
         >>> ctl.ground([("base", [])])
@@ -1019,7 +1019,15 @@ class ProgramBuilder(ContextManager['ProgramBuilder']):
         SAT
     '''
     def __init__(self, control: Control):
-        pass
+        self._rep = _c_call('clingo_program_builder_t*', _lib.clingo_control_program_builder, control._rep)
+
+    def __enter__(self):
+        _handle_error(_lib.clingo_program_builder_begin(self._rep))
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        _handle_error(_lib.clingo_program_builder_end(self._rep))
+        return False
 
     def add(self, statement: AST) -> None:
         '''
@@ -1036,6 +1044,7 @@ class ProgramBuilder(ContextManager['ProgramBuilder']):
         -------
         None
         '''
+        _handle_error(_lib.clingo_program_builder_add_ast(self._rep, statement._rep))
 
 def Id(location: Location, name: str) -> AST:
     '''
