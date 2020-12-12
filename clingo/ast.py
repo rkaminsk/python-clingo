@@ -10,7 +10,7 @@ arguments, and non-empty list arguments.
 ```
 # Terms
 
-term = Symbol
+term = SymbolicTerm
         ( location : Location
         , symbol   : clingo.Symbol
         )
@@ -19,15 +19,15 @@ term = Symbol
         , name     : str
         )
      | UnaryOperation
-        ( location : Location
-        , operator : UnaryOperator
-        , argument : term
+        ( location      : Location
+        , operator_type : UnaryOperator
+        , argument      : term
         )
      | BinaryOperation
-        ( location : Location
-        , operator : BinaryOperator
-        , left     : term
-        , right    : term
+        ( location      : Location
+        , operator_type : BinaryOperator
+        , left          : term
+        , right         : term
         )
      | Interval
         ( location : Location
@@ -83,7 +83,7 @@ theory_term = Symbol
 # Literals
 
 symbolic_atom = SymbolicAtom
-                 ( term : term
+                 ( symbol : term
                  )
 
 literal = Literal
@@ -133,7 +133,7 @@ theory_atom = TheoryAtom
                ( location : Location
                , term     : term
                , elements : TheoryAtomElement
-                             ( tuple     : theory_term*
+                             ( terms     : theory_term*
                              , condition : literal*
                              )*
                , guard    : TheoryGuard
@@ -148,7 +148,7 @@ body_atom = aggregate
              , left_guard  : aggregate_guard?
              , function    : AggregateFunction
              , elements    : BodyAggregateElement
-                              ( tuple     : term*
+                              ( terms     : term*
                               , condition : literal*
                               )*
              , right_guard : aggregate_guard?
@@ -157,7 +157,7 @@ body_atom = aggregate
              ( location : Location
              , elements : DisjointElement
                            ( location  : Location
-                           , tuple     : term*
+                           , terms     : term*
                            , term      : csp_term
                            , condition : literal*
                            )*
@@ -179,7 +179,7 @@ head = literal
         , left_guard  : aggregate_guard?
         , function    : AggregateFunction
         , elements    : HeadAggregateElement
-                         ( tuple     : term*
+                         ( terms     : term*
                          , condition : conditional_literal
                          )*
         , right_guard : aggregate_guard?
@@ -226,7 +226,7 @@ statement = Rule
              ( location : Location
              , weight   : term
              , priority : term
-             , tuple    : term*
+             , terms    : term*
              , body     : body_literal*
              )
           | Script
@@ -310,23 +310,9 @@ from ._internal import (_CBData, _Error,
 from .util import Slice, SlicedMutableSequence
 from .core import MessageCode
 from .control import Control
-from .symbol import Symbol as Symbol_
+from .symbol import Symbol
 
-# pylint: disable=protected-access,invalid-name
-
-# TODO:
-# - currently the reference count is increased once to often when an AST is created
-#   - possible solution:
-#     - all functions return asts with references already incremented
-#     - the AST takes over the ast without incrementing the reference
-# - the Symbol constructor in this module overlaps with the name of the Symbol class
-# - there are some attribute names left that overlap with Python built-ins
-# - implement and decide where to put the program builder
-# - C++ implementation
-#   - to string
-#   - comparison
-#   - unpooling (maybe later)
-# - test everything
+# pylint: disable=protected-access,invalid-name,too-many-lines,too-many-ancestors
 
 class ASTType(Enum):
     '''
@@ -334,7 +320,7 @@ class ASTType(Enum):
     '''
     Id = _lib.clingo_ast_type_id
     Variable = _lib.clingo_ast_type_variable
-    Symbol = _lib.clingo_ast_type_symbol
+    SymbolicTerm = _lib.clingo_ast_type_symbolic_term
     UnaryOperation = _lib.clingo_ast_type_unary_operation
     BinaryOperation = _lib.clingo_ast_type_binary_operation
     Interval = _lib.clingo_ast_type_interval
@@ -595,6 +581,9 @@ class UnaryOperator(IntEnum):
     Negation = _lib.clingo_ast_unary_operator_negation
 
 class ASTSequence(abc.MutableSequence):
+    '''
+    A sequence holding ASTs.
+    '''
     def __init__(self, rep, attribute):
         self._rep = rep
         self._attribute = attribute
@@ -645,6 +634,9 @@ class ASTSequence(abc.MutableSequence):
         return repr(list(self))
 
 class StrSequence(abc.MutableSequence):
+    '''
+    A sequence holding strings.
+    '''
     def __init__(self, rep, attribute):
         self._attribute = attribute
         self._rep = rep
@@ -746,7 +738,6 @@ class AST:
     '''
     def __init__(self, rep):
         super().__setattr__("_rep", rep)
-        _lib.clingo_ast_acquire(self._rep)
 
     def __del__(self):
         _lib.clingo_ast_release(self._rep)
@@ -761,7 +752,7 @@ class AST:
         if attr_type == _lib.clingo_ast_attribute_type_number:
             return _to_str(_c_call('int', _lib.clingo_ast_attribute_get_number, self._rep, attr_id))
         if attr_type == _lib.clingo_ast_attribute_type_symbol:
-            return Symbol_(_c_call('clingo_symbol_t', _lib.clingo_ast_attribute_get_symbol,
+            return Symbol(_c_call('clingo_symbol_t', _lib.clingo_ast_attribute_get_symbol,
                                                 self._rep, attr_id))
         if attr_type == _lib.clingo_ast_attribute_type_location:
             return _py_location(_c_call('clingo_location_t', _lib.clingo_ast_attribute_get_location,
@@ -861,6 +852,7 @@ def _clingo_ast_callback(ast, data):
     Low-level ast callback.
     '''
     callback = _ffi.from_handle(data).data
+    _lib.clingo_ast_acquire(ast)
     callback(AST(ast))
 
     return True
@@ -1022,13 +1014,13 @@ def Variable(location: Location, name: str) -> AST:
         _ffi.new('char const[]', name.encode())))
     return AST(p_ast[0])
 
-def Symbol(location: Location, symbol: Symbol_) -> AST:
+def SymbolicTerm(location: Location, symbol: Symbol) -> AST:
     '''
-    Construct an AST node of type `ASTType.Symbol`.
+    Construct an AST node of type `ASTType.SymbolicTerm`.
     '''
     p_ast = _ffi.new('clingo_ast_t**')
     _handle_error(_lib.clingo_ast_build(
-        _lib.clingo_ast_type_symbol, p_ast,
+        _lib.clingo_ast_type_symbolic_atom, p_ast,
         _c_location(location),
         _ffi.cast('clingo_symbol_t', symbol._rep)))
     return AST(p_ast[0])
@@ -1202,7 +1194,8 @@ def ConditionalLiteral(location: Location, literal: AST, condition: Sequence[AST
         _ffi.cast('size_t', len(condition))))
     return AST(p_ast[0])
 
-def Aggregate(location: Location, left_guard: Optional[AST], elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+def Aggregate(location: Location, left_guard: Optional[AST], elements: Sequence[AST],
+              right_guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.Aggregate`.
     '''
@@ -1216,20 +1209,21 @@ def Aggregate(location: Location, left_guard: Optional[AST], elements: Sequence[
         _ffi.NULL if right_guard is None else right_guard._rep))
     return AST(p_ast[0])
 
-def BodyAggregateElement(tuple: Sequence[AST], condition: Sequence[AST]) -> AST:
+def BodyAggregateElement(terms: Sequence[AST], condition: Sequence[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.BodyAggregateElement`.
     '''
     p_ast = _ffi.new('clingo_ast_t**')
     _handle_error(_lib.clingo_ast_build(
         _lib.clingo_ast_type_body_aggregate_element, p_ast,
-        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
-        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms)),
         _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
         _ffi.cast('size_t', len(condition))))
     return AST(p_ast[0])
 
-def BodyAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+def BodyAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST],
+                  right_guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.BodyAggregate`.
     '''
@@ -1244,20 +1238,21 @@ def BodyAggregate(location: Location, left_guard: Optional[AST], function: int, 
         _ffi.NULL if right_guard is None else right_guard._rep))
     return AST(p_ast[0])
 
-def HeadAggregateElement(tuple: Sequence[AST], condition: Sequence[AST]) -> AST:
+def HeadAggregateElement(terms: Sequence[AST], condition: Sequence[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.HeadAggregateElement`.
     '''
     p_ast = _ffi.new('clingo_ast_t**')
     _handle_error(_lib.clingo_ast_build(
         _lib.clingo_ast_type_head_aggregate_element, p_ast,
-        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
-        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms)),
         _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
         _ffi.cast('size_t', len(condition))))
     return AST(p_ast[0])
 
-def HeadAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+def HeadAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST],
+                  right_guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.HeadAggregate`.
     '''
@@ -1284,7 +1279,7 @@ def Disjunction(location: Location, elements: Sequence[AST]) -> AST:
         _ffi.cast('size_t', len(elements))))
     return AST(p_ast[0])
 
-def DisjointElement(location: Location, tuple: Sequence[AST], term: AST, condition: Sequence[AST]) -> AST:
+def DisjointElement(location: Location, terms: Sequence[AST], term: AST, condition: Sequence[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.DisjointElement`.
     '''
@@ -1292,8 +1287,8 @@ def DisjointElement(location: Location, tuple: Sequence[AST], term: AST, conditi
     _handle_error(_lib.clingo_ast_build(
         _lib.clingo_ast_type_disjoint_element, p_ast,
         _c_location(location),
-        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
-        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms)),
         term._rep,
         _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
         _ffi.cast('size_t', len(condition))))
@@ -1373,28 +1368,28 @@ def TheoryGuard(operator_name: str, term: AST) -> AST:
         term._rep))
     return AST(p_ast[0])
 
-def TheoryAtomElement(tuple: Sequence[AST], condition: Sequence[AST]) -> AST:
+def TheoryAtomElement(terms: Sequence[AST], condition: Sequence[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.TheoryAtomElement`.
     '''
     p_ast = _ffi.new('clingo_ast_t**')
     _handle_error(_lib.clingo_ast_build(
         _lib.clingo_ast_type_theory_atom_element, p_ast,
-        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
-        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms)),
         _ffi.new('clingo_ast*[]', [ x._rep for x in condition ]),
         _ffi.cast('size_t', len(condition))))
     return AST(p_ast[0])
 
-def TheoryAtom(tuple: Sequence[AST], term: AST, elements: Sequence[AST], guard: Sequence[AST]) -> AST:
+def TheoryAtom(terms: Sequence[AST], term: AST, elements: Sequence[AST], guard: Sequence[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.TheoryAtom`.
     '''
     p_ast = _ffi.new('clingo_ast_t**')
     _handle_error(_lib.clingo_ast_build(
         _lib.clingo_ast_type_theory_atom, p_ast,
-        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
-        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms)),
         term._rep,
         _ffi.new('clingo_ast*[]', [ x._rep for x in elements ]),
         _ffi.cast('size_t', len(elements)),
@@ -1453,7 +1448,8 @@ def TheoryGuardDefinition(operators: Sequence[str], term: str) -> AST:
         _ffi.new('char const[]', term.encode())))
     return AST(p_ast[0])
 
-def TheoryAtomDefinition(location: Location, atom_type: int, name: str, arity: int, term: str, guard: Optional[AST]) -> AST:
+def TheoryAtomDefinition(location: Location, atom_type: int, name: str, arity: int, term: str,
+                         guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.TheoryAtomDefinition`.
     '''
@@ -1522,7 +1518,7 @@ def ShowTerm(location: Location, term: AST, body: Sequence[AST], csp: int) -> AS
         _ffi.cast('int', csp)))
     return AST(p_ast[0])
 
-def Minimize(location: Location, weight: AST, priority: int, tuple: Sequence[AST], body: Sequence[AST]) -> AST:
+def Minimize(location: Location, weight: AST, priority: int, terms: Sequence[AST], body: Sequence[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.Minimize`.
     '''
@@ -1532,8 +1528,8 @@ def Minimize(location: Location, weight: AST, priority: int, tuple: Sequence[AST
         _c_location(location),
         weight._rep,
         _ffi.cast('int', priority),
-        _ffi.new('clingo_ast*[]', [ x._rep for x in tuple ]),
-        _ffi.cast('size_t', len(tuple)),
+        _ffi.new('clingo_ast*[]', [ x._rep for x in terms ]),
+        _ffi.cast('size_t', len(terms)),
         _ffi.new('clingo_ast*[]', [ x._rep for x in body ]),
         _ffi.cast('size_t', len(body))))
     return AST(p_ast[0])
@@ -1660,4 +1656,3 @@ def TheoryDefinition(location: Location, name: str, terms: Sequence[AST], atoms:
         _ffi.new('clingo_ast*[]', [ x._rep for x in atoms ]),
         _ffi.cast('size_t', len(atoms))))
     return AST(p_ast[0])
-

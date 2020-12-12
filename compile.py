@@ -1,14 +1,15 @@
-from cffi import FFI
 import re
+from cffi import FFI
+
+clingo_dir = '/home/kaminski/.local/opt/potassco/debug'
 
 ffi = FFI()
 
 cnt = []
-with open('/home/kaminski/.local/opt/potassco/release/include/clingo.h') as f:
+with open(f'{clingo_dir}/include/clingo.h') as f:
     for line in f:
         if not re.match(r' *(#|//|extern *"C" *{|}$|$)', line):
             cnt.append(line.replace('CLINGO_VISIBILITY_DEFAULT ', ''))
-
 
 # callbacks
 cnt.append('extern "Python" bool _clingo_solve_event_callback(clingo_solve_event_type_t type, void *event, void *data, bool *goon);')
@@ -58,14 +59,9 @@ cnt.append('extern "Python" bool _clingo_ast_callback(clingo_ast_t const *, void
 ffi.set_source(
     '_clingo',
     '#include <clingo.h>',
-    include_dirs=['/home/kaminski/.local/opt/potassco/debug/include'],
-    library_dirs=['/home/kaminski/.local/opt/potassco/debug/lib'],
-    extra_link_args=['-Wl,-rpath=/home/kaminski/.local/opt/potassco/debug/lib'],
+    include_dirs=[f'{clingo_dir}/include'],
+    library_dirs=[f'{clingo_dir}/lib'],
+    extra_link_args=[f'-Wl,-rpath={clingo_dir}/lib'],
     libraries=['clingo'])
 ffi.cdef(''.join(cnt))
 ffi.compile()
-
-#ctl = ffi.new('clingo_control_t **')
-#lib.clingo_control_new(ffi.NULL, 0, ffi.NULL, ffi.NULL, 20, ctl)
-
-#print(ctl)
