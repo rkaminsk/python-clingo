@@ -4,27 +4,50 @@ Tests for the ast module.
 TODO:
 - test comparison and hashing
 - test locations
-- test copying
-- test the constructors
-- test program builder
 - test ast class
 - test ast and str sequences
+- test program builder
 '''
 from unittest import TestCase
 from textwrap import dedent
+from collections.abc import Sequence
 
-from clingo.ast import parse_string
+from .. import ast
+from ..ast import AST, parse_string
 
 class TestAST(TestCase):
     '''
     Tests for the ast module.
     '''
+    def _deepcopy(self, node: AST):
+        '''
+        This functions tests manual deep copying of ast nodes using all the
+        constructor functions in the ast module.
+        '''
+        cons_name = str(node.ast_type).split(".")[1]
+        cons = getattr(ast, cons_name)
+        args = dict(node.items())
+
+        for key in node.child_keys:
+            if isinstance(args[key], Sequence):
+                seq = []
+                for child in args[key]:
+                    cpy = self._deepcopy(child)
+                    self.assertEqual(cpy, child)
+                    seq.append(cpy)
+                args[key] = seq
+            elif isinstance(args[key], AST):
+                args[key] = self._deepcopy(args[key])
+
+        return cons(**args)
+
     def _str(self, s, alt=None):
         prg = []
         parse_string(s, prg.append)
-        # This function should also test copying, deepcopying, the constructor
-        # functions, and to pass asts back to the parser.
-        self.assertEqual(str(prg[-1]), s if alt is None else alt)
+        node = prg[-1]
+        cpy = self._deepcopy(node).deepcopy().copy()
+        # This function should also pass asts back to the parser.
+        self.assertEqual(str(cpy), s if alt is None else alt)
 
     def test_terms(self):
         '''

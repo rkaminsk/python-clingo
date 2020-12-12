@@ -51,7 +51,7 @@ def generate_parameter(name, idx):
     if idx == _lib.clingo_ast_attribute_type_optional_ast:
         return [f'_ffi.NULL if {name} is None else {name}._rep']
     if idx == _lib.clingo_ast_attribute_type_ast_array:
-        return [f"_ffi.new('clingo_ast*[]', [ x._rep for x in {name} ])", f"_ffi.cast('size_t', len({name}))"]
+        return [f"_ffi.new('clingo_ast_t*[]', [ x._rep for x in {name} ])", f"_ffi.cast('size_t', len({name}))"]
     assert idx == _lib.clingo_ast_attribute_type_string_array
     return [f"_ffi.new('char*[]', c_{name})", f"_ffi.cast('size_t', len({name}))"]
 
@@ -76,7 +76,7 @@ def generate():
         c_name = _ffi.string(constructor.name).decode()
         name = to_camel_case(c_name)
         arguments_str = ", ".join(f'{a}: {t}' for a, t in generate_arguments(constructor))
-        sys.stdout.write(f'def {name}({arguments_str}) -> AST:\n')
+        sys.stdout.write(f'\ndef {name}({arguments_str}) -> AST:\n')
         sys.stdout.write("    '''\n")
         sys.stdout.write(f'    Construct an AST node of type `ASTType.{name}`.\n')
         sys.stdout.write("    '''\n")
@@ -91,6 +91,6 @@ def generate():
             sys.stdout.write(f",\n        {param}")
         sys.stdout.write(f"))\n")
 
-        sys.stdout.write(f"    return AST(p_ast[0])\n\n")
+        sys.stdout.write(f"    return AST(p_ast[0])\n")
 
 generate()
