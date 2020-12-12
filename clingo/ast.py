@@ -801,7 +801,7 @@ class AST:
     def __str__(self):
         return _str(_lib.clingo_ast_to_string_size, _lib.clingo_ast_to_string, self._rep)
 
-    def copy(self) -> 'AST':
+    def __copy__(self) -> 'AST':
         """
         Return a shallow copy of the ast.
 
@@ -811,7 +811,7 @@ class AST:
         """
         return AST(_c_call('clingo_ast_t*', _lib.clingo_ast_copy, self._rep))
 
-    def deepcopy(self) -> 'AST':
+    def __deepcopy__(self, memo) -> 'AST':
         """
         Return a deep copy of the ast.
 
@@ -1222,7 +1222,8 @@ def ConditionalLiteral(location: Location, literal: AST, condition: Sequence[AST
         _ffi.cast('size_t', len(condition))))
     return AST(p_ast[0])
 
-def Aggregate(location: Location, left_guard: Optional[AST], elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+def Aggregate(location: Location, left_guard: Optional[AST], elements: Sequence[AST],
+              right_guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.Aggregate`.
     '''
@@ -1249,7 +1250,8 @@ def BodyAggregateElement(terms: Sequence[AST], condition: Sequence[AST]) -> AST:
         _ffi.cast('size_t', len(condition))))
     return AST(p_ast[0])
 
-def BodyAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+def BodyAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST],
+                  right_guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.BodyAggregate`.
     '''
@@ -1276,7 +1278,8 @@ def HeadAggregateElement(terms: Sequence[AST], condition: AST) -> AST:
         condition._rep))
     return AST(p_ast[0])
 
-def HeadAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST], right_guard: Optional[AST]) -> AST:
+def HeadAggregate(location: Location, left_guard: Optional[AST], function: int, elements: Sequence[AST],
+                  right_guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.HeadAggregate`.
     '''
@@ -1470,7 +1473,8 @@ def TheoryGuardDefinition(operators: Sequence[str], term: str) -> AST:
         _ffi.new('char const[]', term.encode())))
     return AST(p_ast[0])
 
-def TheoryAtomDefinition(location: Location, atom_type: int, name: str, arity: int, term: str, guard: Optional[AST]) -> AST:
+def TheoryAtomDefinition(location: Location, atom_type: int, name: str, arity: int, term: str,
+                         guard: Optional[AST]) -> AST:
     '''
     Construct an AST node of type `ASTType.TheoryAtomDefinition`.
     '''

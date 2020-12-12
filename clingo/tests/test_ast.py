@@ -11,6 +11,7 @@ TODO:
 from unittest import TestCase
 from textwrap import dedent
 from collections.abc import Sequence
+from copy import copy, deepcopy
 
 from .. import ast
 from ..ast import AST, parse_string
@@ -45,7 +46,7 @@ class TestAST(TestCase):
         prg = []
         parse_string(s, prg.append)
         node = prg[-1]
-        cpy = self._deepcopy(node).deepcopy().copy()
+        cpy = copy(deepcopy(self._deepcopy(node)))
         # This function should also pass asts back to the parser.
         self.assertEqual(str(cpy), s if alt is None else alt)
 
