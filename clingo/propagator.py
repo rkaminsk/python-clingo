@@ -778,33 +778,33 @@ class Propagator(metaclass=ABCMeta):
         '''
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_propagator_init(init, data):
+def pyclingo_propagator_init(init, data):
     propagator = _ffi.from_handle(data).data
     propagator.init(PropagateInit(init))
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_propagator_propagate(control, changes, size, data):
+def pyclingo_propagator_propagate(control, changes, size, data):
     propagator = _ffi.from_handle(data).data
     py_changes = [changes[i] for i in range(size)]
     propagator.propagate(PropagateControl(control), py_changes)
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_propagator_undo(control, changes, size, data):
+def pyclingo_propagator_undo(control, changes, size, data):
     propagator = _ffi.from_handle(data).data
     py_changes = [changes[i] for i in range(size)]
     ctl = PropagateControl(control)
     propagator.undo(ctl.thread_id, ctl.assignment, py_changes)
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_propagator_check(control, data):
+def pyclingo_propagator_check(control, data):
     propagator = _ffi.from_handle(data).data
     propagator.check(PropagateControl(control))
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_propagator_decide(thread_id, assignment, fallback, data, decision):
+def pyclingo_propagator_decide(thread_id, assignment, fallback, data, decision):
     propagator = _ffi.from_handle(data).data
     decision[0] = propagator.decide(thread_id, Assignment(assignment), fallback)
     return True

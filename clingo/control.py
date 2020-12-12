@@ -42,7 +42,7 @@ class _SolveEventHandler:
             self._on_statistics(_mutable_statistics(step), _mutable_statistics(accu))
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_solve_event_callback(type_, event, data, goon):
+def pyclingo_solve_event_callback(type_, event, data, goon):
     '''
     Low-level solve event handler.
     '''
@@ -60,7 +60,7 @@ def _clingo_solve_event_callback(type_, event, data, goon):
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_ground_callback(location, name, arguments, arguments_size, data, symbol_callback, symbol_callback_data):
+def pyclingo_ground_callback(location, name, arguments, arguments_size, data, symbol_callback, symbol_callback_data):
     '''
     Low-level ground callback.
     '''
@@ -119,7 +119,7 @@ class Control:
         if isinstance(arguments, abc.Sequence):
             if logger is not None:
                 c_handle = _ffi.new_handle(logger)
-                c_cb = _lib._clingo_logger_callback
+                c_cb = _lib.pyclingo_logger_callback
                 self._mem.append(c_handle)
             else:
                 c_handle = _ffi.NULL
@@ -328,7 +328,7 @@ class Control:
             c_part.size = len(part[1])
 
         _handle_error(_lib.clingo_control_ground(
-            self._rep, c_parts, len(parts), _lib._clingo_ground_callback, c_handler), handler)
+            self._rep, c_parts, len(parts), _lib.pyclingo_ground_callback, c_handler), handler)
 
     def interrupt(self) -> None:
         '''
@@ -386,26 +386,26 @@ class Control:
         '''
         # pylint: disable=protected-access,line-too-long
         c_observer = _ffi.new('clingo_ground_program_observer_t*', (
-            _lib._clingo_observer_init_program if _overwritten(Observer, observer, "init_program") else _ffi.NULL,
-            _lib._clingo_observer_begin_step if _overwritten(Observer, observer, "begin_step") else _ffi.NULL,
-            _lib._clingo_observer_end_step if _overwritten(Observer, observer, "end_step") else _ffi.NULL,
-            _lib._clingo_observer_rule if _overwritten(Observer, observer, "rule") else _ffi.NULL,
-            _lib._clingo_observer_weight_rule if _overwritten(Observer, observer, "weight_rule") else _ffi.NULL,
-            _lib._clingo_observer_minimize if _overwritten(Observer, observer, "minimize") else _ffi.NULL,
-            _lib._clingo_observer_project if _overwritten(Observer, observer, "project") else _ffi.NULL,
-            _lib._clingo_observer_output_atom if _overwritten(Observer, observer, "output_atom") else _ffi.NULL,
-            _lib._clingo_observer_output_term if _overwritten(Observer, observer, "output_term") else _ffi.NULL,
-            _lib._clingo_observer_output_csp if _overwritten(Observer, observer, "output_csp") else _ffi.NULL,
-            _lib._clingo_observer_external if _overwritten(Observer, observer, "external") else _ffi.NULL,
-            _lib._clingo_observer_assume if _overwritten(Observer, observer, "assume") else _ffi.NULL,
-            _lib._clingo_observer_heuristic if _overwritten(Observer, observer, "heuristic") else _ffi.NULL,
-            _lib._clingo_observer_acyc_edge if _overwritten(Observer, observer, "acyc_edge") else _ffi.NULL,
-            _lib._clingo_observer_theory_term_number if _overwritten(Observer, observer, "theory_term_number") else _ffi.NULL,
-            _lib._clingo_observer_theory_term_string if _overwritten(Observer, observer, "theory_term_string") else _ffi.NULL,
-            _lib._clingo_observer_theory_term_compound if _overwritten(Observer, observer, "theory_term_compound") else _ffi.NULL,
-            _lib._clingo_observer_theory_element if _overwritten(Observer, observer, "theory_element") else _ffi.NULL,
-            _lib._clingo_observer_theory_atom if _overwritten(Observer, observer, "theory_atom") else _ffi.NULL,
-            _lib._clingo_observer_theory_atom_with_guard if _overwritten(Observer, observer, "theory_atom_with_guard") else _ffi.NULL))
+            _lib.pyclingo_observer_init_program if _overwritten(Observer, observer, "init_program") else _ffi.NULL,
+            _lib.pyclingo_observer_begin_step if _overwritten(Observer, observer, "begin_step") else _ffi.NULL,
+            _lib.pyclingo_observer_end_step if _overwritten(Observer, observer, "end_step") else _ffi.NULL,
+            _lib.pyclingo_observer_rule if _overwritten(Observer, observer, "rule") else _ffi.NULL,
+            _lib.pyclingo_observer_weight_rule if _overwritten(Observer, observer, "weight_rule") else _ffi.NULL,
+            _lib.pyclingo_observer_minimize if _overwritten(Observer, observer, "minimize") else _ffi.NULL,
+            _lib.pyclingo_observer_project if _overwritten(Observer, observer, "project") else _ffi.NULL,
+            _lib.pyclingo_observer_output_atom if _overwritten(Observer, observer, "output_atom") else _ffi.NULL,
+            _lib.pyclingo_observer_output_term if _overwritten(Observer, observer, "output_term") else _ffi.NULL,
+            _lib.pyclingo_observer_output_csp if _overwritten(Observer, observer, "output_csp") else _ffi.NULL,
+            _lib.pyclingo_observer_external if _overwritten(Observer, observer, "external") else _ffi.NULL,
+            _lib.pyclingo_observer_assume if _overwritten(Observer, observer, "assume") else _ffi.NULL,
+            _lib.pyclingo_observer_heuristic if _overwritten(Observer, observer, "heuristic") else _ffi.NULL,
+            _lib.pyclingo_observer_acyc_edge if _overwritten(Observer, observer, "acyc_edge") else _ffi.NULL,
+            _lib.pyclingo_observer_theory_term_number if _overwritten(Observer, observer, "theory_term_number") else _ffi.NULL,
+            _lib.pyclingo_observer_theory_term_string if _overwritten(Observer, observer, "theory_term_string") else _ffi.NULL,
+            _lib.pyclingo_observer_theory_term_compound if _overwritten(Observer, observer, "theory_term_compound") else _ffi.NULL,
+            _lib.pyclingo_observer_theory_element if _overwritten(Observer, observer, "theory_element") else _ffi.NULL,
+            _lib.pyclingo_observer_theory_atom if _overwritten(Observer, observer, "theory_atom") else _ffi.NULL,
+            _lib.pyclingo_observer_theory_atom_with_guard if _overwritten(Observer, observer, "theory_atom_with_guard") else _ffi.NULL))
         c_data = _ffi.new_handle(_CBData(observer, self._error))
         self._mem.append(c_data)
         _handle_error(_lib.clingo_control_register_observer(self._rep, c_observer, replace, c_data))
@@ -440,11 +440,11 @@ class Control:
         '''
         # pylint: disable=protected-access
         c_propagator = _ffi.new('clingo_propagator_t*', (
-            _lib._clingo_propagator_init if _overwritten(Propagator, propagator, "init") else _ffi.NULL,
-            _lib._clingo_propagator_propagate if _overwritten(Propagator, propagator, "propagate") else _ffi.NULL,
-            _lib._clingo_propagator_undo if _overwritten(Propagator, propagator, "undo") else _ffi.NULL,
-            _lib._clingo_propagator_check if _overwritten(Propagator, propagator, "check") else _ffi.NULL,
-            _lib._clingo_propagator_decide if _overwritten(Propagator, propagator, "decide") else _ffi.NULL))
+            _lib.pyclingo_propagator_init if _overwritten(Propagator, propagator, "init") else _ffi.NULL,
+            _lib.pyclingo_propagator_propagate if _overwritten(Propagator, propagator, "propagate") else _ffi.NULL,
+            _lib.pyclingo_propagator_undo if _overwritten(Propagator, propagator, "undo") else _ffi.NULL,
+            _lib.pyclingo_propagator_check if _overwritten(Propagator, propagator, "check") else _ffi.NULL,
+            _lib.pyclingo_propagator_decide if _overwritten(Propagator, propagator, "decide") else _ffi.NULL))
         c_data = _ffi.new_handle(_CBData(propagator, self._error))
         self._mem.append(c_data)
         _handle_error(_lib.clingo_control_register_propagator(self._rep, c_propagator, c_data, False))
@@ -629,7 +629,7 @@ class Control:
             _c_call('clingo_solve_handle_t*', _lib.clingo_control_solve,
                 self._rep, mode,
                 p_ass, len(assumptions),
-                _lib._clingo_solve_event_callback, self._handler,
+                _lib.pyclingo_solve_event_callback, self._handler,
                 handler=data),
             handler)
 

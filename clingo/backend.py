@@ -396,25 +396,25 @@ class Observer(metaclass=ABCMeta):
         '''
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_init_program(incremental, data):
+def pyclingo_observer_init_program(incremental, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.init_program(incremental)
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_begin_step(data):
+def pyclingo_observer_begin_step(data):
     observer: Observer = _ffi.from_handle(data).data
     observer.begin_step()
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_end_step(data):
+def pyclingo_observer_end_step(data):
     observer: Observer = _ffi.from_handle(data).data
     observer.end_step()
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_rule(choice, head, head_size, body, body_size, data):
+def pyclingo_observer_rule(choice, head, head_size, body, body_size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.rule(
         choice,
@@ -423,7 +423,7 @@ def _clingo_observer_rule(choice, head, head_size, body, body_size, data):
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_weight_rule(choice, head, head_size, lower_bound, body, body_size, data):
+def pyclingo_observer_weight_rule(choice, head, head_size, lower_bound, body, body_size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.weight_rule(
         choice,
@@ -433,79 +433,79 @@ def _clingo_observer_weight_rule(choice, head, head_size, lower_bound, body, bod
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_minimize(priority, literals, size, data):
+def pyclingo_observer_minimize(priority, literals, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.minimize(priority, [ (literals[i].literal, literals[i].weight) for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_project(atoms, size, data):
+def pyclingo_observer_project(atoms, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.project([ atoms[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_output_atom(symbol, atom, data):
+def pyclingo_observer_output_atom(symbol, atom, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.output_atom(Symbol(symbol), atom)
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_output_term(symbol, condition, size, data):
+def pyclingo_observer_output_term(symbol, condition, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.output_term(Symbol(symbol), [ condition[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_output_csp(symbol, value, condition, size, data):
+def pyclingo_observer_output_csp(symbol, value, condition, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.output_csp(Symbol(symbol), value, [ condition[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_external(atom, type_, data):
+def pyclingo_observer_external(atom, type_, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.external(atom, TruthValue(type_))
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_assume(literals, size, data):
+def pyclingo_observer_assume(literals, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.assume([ literals[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_heuristic(atom, type_, bias, priority, condition, size, data):
+def pyclingo_observer_heuristic(atom, type_, bias, priority, condition, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.heuristic(atom, HeuristicType(type_), bias, priority, [ condition[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_acyc_edge(node_u, node_v, condition, size, data):
+def pyclingo_observer_acyc_edge(node_u, node_v, condition, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.acyc_edge(node_u, node_v, [ condition[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_theory_term_number(term_id, number, data):
+def pyclingo_observer_theory_term_number(term_id, number, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.theory_term_number(term_id, number)
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_theory_term_string(term_id, name, data):
+def pyclingo_observer_theory_term_string(term_id, name, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.theory_term_string(term_id, _to_str(name))
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_theory_term_compound(term_id, name_id_or_type, arguments, size, data):
+def pyclingo_observer_theory_term_compound(term_id, name_id_or_type, arguments, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.theory_term_compound(term_id, name_id_or_type, [ arguments[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_theory_element(element_id, terms, terms_size, condition, condition_size, data):
+def pyclingo_observer_theory_element(element_id, terms, terms_size, condition, condition_size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.theory_element(
         element_id,
@@ -514,13 +514,13 @@ def _clingo_observer_theory_element(element_id, terms, terms_size, condition, co
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_theory_atom(atom_id_or_zero, term_id, elements, size, data):
+def pyclingo_observer_theory_atom(atom_id_or_zero, term_id, elements, size, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.theory_atom(atom_id_or_zero, term_id, [ elements[i] for i in range(size) ])
     return True
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_observer_theory_atom_with_guard(atom_id_or_zero, term_id, elements, size,
+def pyclingo_observer_theory_atom_with_guard(atom_id_or_zero, term_id, elements, size,
                                             operator_id, right_hand_side_id, data):
     observer: Observer = _ffi.from_handle(data).data
     observer.theory_atom_with_guard(

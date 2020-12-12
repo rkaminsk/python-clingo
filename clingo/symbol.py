@@ -266,7 +266,7 @@ def parse_term(string: str, logger: Callable[[MessageCode,str],None]=None, messa
     if logger is not None:
         # pylint: disable=protected-access
         c_handle = _ffi.new_handle(logger)
-        c_cb = _lib._clingo_logger_callback
+        c_cb = _lib.pyclingo_logger_callback
     else:
         c_handle = _ffi.NULL
         c_cb = _ffi.NULL

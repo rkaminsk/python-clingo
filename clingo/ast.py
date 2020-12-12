@@ -874,7 +874,7 @@ class AST:
                                                _lib.clingo_ast_attribute_type_ast_array) ]
 
 @_ffi.def_extern(onerror=_cb_error_handler('data'))
-def _clingo_ast_callback(ast, data):
+def pyclingo_ast_callback(ast, data):
     '''
     Low-level ast callback.
     '''
@@ -915,7 +915,7 @@ def parse_files(files: Iterable[str], callback: Callable[[AST], None],
     '''
     if logger is not None:
         c_logger_data = _ffi.new_handle(logger)
-        c_logger = _lib._clingo_logger_callback
+        c_logger = _lib.pyclingo_logger_callback
     else:
         c_logger_data = _ffi.NULL
         c_logger = _ffi.NULL
@@ -925,7 +925,7 @@ def parse_files(files: Iterable[str], callback: Callable[[AST], None],
     c_cb_data = _ffi.new_handle(cb_data)
 
     _handle_error(_lib.clingo_ast_parse_files([ _ffi.new("char[]", f.encode()) for f in files ],
-                                              _lib._clingo_ast_callback, c_cb_data,
+                                              _lib.pyclingo_ast_callback, c_cb_data,
                                               c_logger, c_logger_data,
                                               message_limit))
 
@@ -956,7 +956,7 @@ def parse_string(program: str, callback: Callable[[AST], None],
     '''
     if logger is not None:
         c_logger_data = _ffi.new_handle(logger)
-        c_logger = _lib._clingo_logger_callback
+        c_logger = _lib.pyclingo_logger_callback
     else:
         c_logger_data = _ffi.NULL
         c_logger = _ffi.NULL
@@ -966,7 +966,7 @@ def parse_string(program: str, callback: Callable[[AST], None],
     c_cb_data = _ffi.new_handle(cb_data)
 
     _handle_error(_lib.clingo_ast_parse_string(program.encode(),
-                                               _lib._clingo_ast_callback, c_cb_data,
+                                               _lib.pyclingo_ast_callback, c_cb_data,
                                                c_logger, c_logger_data,
                                                message_limit))
 
