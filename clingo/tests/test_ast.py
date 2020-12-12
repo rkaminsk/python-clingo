@@ -31,24 +31,24 @@ class TestAST(TestCase):
 
         for key in node.child_keys:
             if isinstance(args[key], Sequence):
-                seq = []
-                for child in args[key]:
-                    cpy = self._deepcopy(child)
-                    self.assertEqual(cpy, child)
-                    seq.append(cpy)
-                args[key] = seq
+                args[key] = [ self._deepcopy(child) for child in args[key] ]
             elif isinstance(args[key], AST):
                 args[key] = self._deepcopy(args[key])
 
-        return cons(**args)
+        cpy = cons(**args)
+        self.assertEqual(cpy, node)
+        return cpy
 
     def _str(self, s, alt=None):
+        # TODO: This function should also pass asts back to the parser.
         prg = []
         parse_string(s, prg.append)
-        node = prg[-1]
-        cpy = copy(deepcopy(self._deepcopy(node)))
-        # This function should also pass asts back to the parser.
+        cpy = copy(deepcopy(self._deepcopy(prg[-1])))
         self.assertEqual(str(cpy), s if alt is None else alt)
+
+        prg = []
+        parse_string(str(cpy), prg.append)
+        self.assertEqual(str(prg[-1]), s if alt is None else alt)
 
     def test_terms(self):
         '''
