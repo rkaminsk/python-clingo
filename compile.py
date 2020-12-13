@@ -1,7 +1,24 @@
 import re
 from cffi import FFI
 
+embed = False
 clingo_dir = '/home/kaminski/.local/opt/potassco/debug'
+script_h = '''\
+typedef struct clingo_script_ {
+    bool (*execute) (clingo_location_t const *loc, char const *code, void *data);
+    bool (*call) (clingo_location_t const *loc, char const *name, clingo_symbol_t const *arguments, size_t arguments_size, clingo_symbol_callback_t symbol_callback, void *symbol_callback_data, void *data);
+    bool (*callable) (char const * name, bool *ret, void *data);
+    bool (*main) (clingo_control_t *ctl, void *data);
+    void (*free) (void *data);
+    char const *version;
+} clingo_script_t_;
+
+CLINGO_VISIBILITY_DEFAULT bool clingo_register_script_(clingo_ast_script_type_t type, clingo_script_t_ const *script, void *data);
+CLINGO_VISIBILITY_DEFAULT char const *clingo_script_version_(clingo_ast_script_type_t type);
+'''
+clingo_h = '''\
+#include <clingo.h>
+'''
 
 ffi = FFI()
 
@@ -10,6 +27,8 @@ with open(f'{clingo_dir}/include/clingo.h') as f:
     for line in f:
         if not re.match(r' *(#|//|extern *"C" *{|}$|$)', line):
             cnt.append(line.replace('CLINGO_VISIBILITY_DEFAULT ', ''))
+    if embed:
+        cnt.append(script_h.replace('CLINGO_VISIBILITY_DEFAULT ', ''))
 
 # callbacks
 cnt.append('extern "Python" bool pyclingo_solve_event_callback(clingo_solve_event_type_t type, void *event, void *data, bool *goon);')
@@ -56,12 +75,29 @@ cnt.append('extern "Python" bool pyclingo_application_options_parse(char const *
 # ast callbacks
 cnt.append('extern "Python" bool pyclingo_ast_callback(clingo_ast_t const *, void *);')
 
+if embed:
+    ffi.embedding_api('''\
+bool clingo_register_python_();
+''')
+
+    ffi.embedding_init_code("""\
+from _clingo import ffi
+
+@ffi.def_extern()
+def clingo_register_python():
+    print('some python code is needed to register')
+""")
+
+if embed:
+    clingo_h += script_h
+
 ffi.set_source(
     '_clingo',
-    '#include <clingo.h>',
+    clingo_h,
     include_dirs=[f'{clingo_dir}/include'],
     library_dirs=[f'{clingo_dir}/lib'],
     extra_link_args=[f'-Wl,-rpath={clingo_dir}/lib'],
     libraries=['clingo'])
 ffi.cdef(''.join(cnt))
-ffi.compile()
+
+ffi.compile(verbose=1)
