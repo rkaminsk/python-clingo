@@ -1,8 +1,5 @@
 '''
 Tests for the ast module.
-
-TODO:
-- test program builder
 '''
 from unittest import TestCase
 from textwrap import dedent
