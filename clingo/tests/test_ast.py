@@ -69,9 +69,15 @@ class TestAST(TestCase):
         parse_string(str(cpy), prg.append)
         self.assertEqual(str(prg[-1]), s if alt is None else alt)
 
-        # ctl = Control()
-        # with ProgramBuilder(ctl) as bld:
-        #    bld.add(prg[-1])
+        try:
+            ctl = Control()
+            with ProgramBuilder(ctl) as bld:
+                bld.add(prg[-1])
+        except RuntimeError as e:
+            msg = e.args[0]
+            if ("error: python support not available" not in msg and
+                "error: lua support not available" not in msg):
+                raise RuntimeError from e
 
     def test_terms(self):
         '''
