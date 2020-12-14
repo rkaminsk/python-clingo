@@ -74,12 +74,13 @@ def pyclingo_ground_callback(location, name, arguments, arguments_size, data, sy
     for i in range(arguments_size):
         args.append(Symbol(arguments[i]))
 
-    symbols = list(fun(*args))
+    ret = fun(*args)
+    symbols = list(ret) if isinstance(ret, abc.Iterable) else [ret]
 
     c_symbols = _ffi.new('clingo_symbol_t[]', len(symbols))
     for i, sym in enumerate(symbols):
         c_symbols[i] = sym._rep
-    symbol_callback(c_symbols, len(symbols), symbol_callback_data)
+    _handle_error(symbol_callback(c_symbols, len(symbols), symbol_callback_data))
 
     return True
 

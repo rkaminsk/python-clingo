@@ -4,17 +4,6 @@ from cffi import FFI
 embed = False
 clingo_dir = '/home/kaminski/.local/opt/potassco/debug'
 script_h = '''\
-typedef struct clingo_script_ {
-    bool (*execute) (clingo_location_t const *loc, char const *code, void *data);
-    bool (*call) (clingo_location_t const *loc, char const *name, clingo_symbol_t const *arguments, size_t arguments_size, clingo_symbol_callback_t symbol_callback, void *symbol_callback_data, void *data);
-    bool (*callable) (char const * name, bool *ret, void *data);
-    bool (*main) (clingo_control_t *ctl, void *data);
-    void (*free) (void *data);
-    char const *version;
-} clingo_script_t_;
-
-CLINGO_VISIBILITY_DEFAULT bool clingo_register_script_(clingo_ast_script_type_t type, clingo_script_t_ const *script, void *data);
-CLINGO_VISIBILITY_DEFAULT char const *clingo_script_version_(clingo_ast_script_type_t type);
 '''
 clingo_h = '''\
 #include <clingo.h>
@@ -77,15 +66,61 @@ cnt.append('extern "Python" bool pyclingo_ast_callback(clingo_ast_t const *, voi
 
 if embed:
     ffi.embedding_api('''\
-bool clingo_register_python_();
+bool pyclingo_execute_(void *loc, char const *code, void *data);
+bool pyclingo_call_(void *loc, char const *name, void *arguments, size_t size, void *symbol_callback, void *symbol_callback_data, void *data);
+bool pyclingo_callable_(char const * name, bool *ret, void *data);
+bool pyclingo_main_(void *ctl, void *data);
 ''')
 
     ffi.embedding_init_code("""\
-from _clingo import ffi
+from collections.abc import Iterable
+from traceback import format_exception
+import sys
+import __main__
 
-@ffi.def_extern()
-def clingo_register_python():
-    print('some python code is needed to register')
+sys.path.insert(0, '/home/kaminski/git/rkaminsk/python-clingo')
+from clingo._internal import _ffi, _handle_error, _lib
+from clingo.control import Control
+from clingo.symbol import Symbol
+
+def _cb_error_top_level(exception, exc_value, traceback):
+    msg = format_exception(exception, exc_value, traceback)
+    _lib.clingo_set_error(_lib.clingo_error_runtime, msg)
+    return False
+
+@_ffi.def_extern(onerror=_cb_error_top_level)
+def pyclingo_execute_(loc, code, data):
+    exec(_ffi.string(code).decode(), __main__.__dict__, __main__.__dict__)
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_top_level)
+def pyclingo_call_(loc, name, arguments, size, symbol_callback, symbol_callback_data, data):
+    context = _ffi.from_handle(data).data
+    py_name = _ffi.string(name).decode()
+    fun = getattr(__main__ if context is None else context, py_name)
+
+    args = []
+    for i in range(arguments_size):
+        args.append(Symbol(arguments[i]))
+
+    ret = fun(*args)
+    symbols = list(ret) if isinstance(ret, Iterable) else [ret]
+
+    c_symbols = _ffi.new('clingo_symbol_t[]', len(symbols))
+    for i, sym in enumerate(symbols):
+        c_symbols[i] = sym._rep
+    _handle_error(symbol_callback(c_symbols, len(symbols), symbol_callback_data))
+
+@_ffi.def_extern(onerror=_cb_error_top_level)
+def pyclingo_callable_(name, ret, data):
+    py_name = _ffi.string(name).decode()
+    ret[0] = py_name in __main__.__dict__ and callable(__main__.__dict__[py_name])
+    return True
+
+@_ffi.def_extern(onerror=_cb_error_top_level)
+def pyclingo_main_(ctl, data):
+    __main__.main(Control(_ffi.cast('clingo_control_t*', ctl)))
+    return True
 """)
 
 if embed:
